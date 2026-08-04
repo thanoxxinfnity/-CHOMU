@@ -144,25 +144,6 @@ fun CompanionViewer(
             FallbackCompanionAvatar(agentState = agentState, isCompact = isCompact)
         }
 
-        // State label
-        if (!isCompact) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 12.dp)
-                    .background(
-                        color = stateGlowColor.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(50)
-                    )
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = agentState.name,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = stateGlowColor
-                )
-            }
-        }
     }
 }
 

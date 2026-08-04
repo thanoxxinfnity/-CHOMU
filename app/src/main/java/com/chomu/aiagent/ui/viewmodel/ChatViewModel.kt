@@ -2,6 +2,8 @@ package com.chomu.aiagent.ui.viewmodel
 
 import android.app.Application
 import android.content.Intent
+import android.provider.Settings
+import android.text.TextUtils
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.chomu.aiagent.data.repository.AppSettings
@@ -142,6 +144,12 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun dispatchAction(action: AutomationAction) {
+        if (!isAccessibilityServiceEnabled()) {
+            _uiState.update {
+                it.copy(error = "Enable CHOMU Accessibility Service in Settings > Accessibility to use automation")
+            }
+            return
+        }
         val intent = Intent("com.chomu.aiagent.AUTOMATION_ACTION").apply {
             putExtra("action_type", action.action)
             putExtra("target_id", action.targetId)
@@ -150,6 +158,22 @@ class ChatViewModel @Inject constructor(
             setPackage(getApplication<Application>().packageName)
         }
         getApplication<Application>().sendBroadcast(intent)
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val app = getApplication<Application>()
+        val serviceId = "${app.packageName}/.service.AgentAutomationService"
+        return try {
+            val enabledServices = Settings.Secure.getString(
+                app.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            val colonSplitter = TextUtils.SimpleStringSplitter(':')
+            colonSplitter.setString(enabledServices)
+            while (colonSplitter.hasNext()) {
+                if (colonSplitter.next().equals(serviceId, ignoreCase = true)) return true
+            }
+            false
+        } catch (_: Exception) { false }
     }
 
     /**

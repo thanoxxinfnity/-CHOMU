@@ -18,16 +18,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import android.provider.Settings
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.chomu.aiagent.domain.model.AgentState
 import com.chomu.aiagent.domain.model.Message
@@ -106,8 +109,8 @@ fun ChatScreen(
         Column(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(end = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             HoloFab(
@@ -188,7 +191,7 @@ fun ChatScreen(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Top bar
+// Top bar — minimal transparent sci-fi HUD style
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun HoloTopBar(
@@ -202,44 +205,50 @@ private fun HoloTopBar(
     Row(
         modifier = modifier
             .statusBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // State indicator
-        Box(
-            Modifier
-                .size(34.dp)
-                .background(accentColor.copy(0.15f), CircleShape)
-                .border(1.dp, accentColor.copy(0.4f), CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                when (agentState) {
-                    AgentState.IDLE      -> "✦"
-                    AgentState.LISTENING -> "◉"
-                    AgentState.TALKING   -> "◈"
-                    AgentState.WORKING   -> "⊛"
-                },
-                color = accentColor, style = MaterialTheme.typography.labelLarge
-            )
-        }
-        Spacer(Modifier.width(8.dp))
+        // CHOMU branding
         Column(Modifier.weight(1f)) {
-            Text("CHOMU", style = MaterialTheme.typography.titleMedium, color = DarkOnSurface)
             Text(
-                agentState.name,
-                style = MaterialTheme.typography.labelSmall,
+                "CHOMU",
+                style = MaterialTheme.typography.titleSmall.copy(letterSpacing = 3.sp),
                 color = accentColor
             )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(5.dp).background(accentColor, CircleShape))
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    agentState.name,
+                    style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.5.sp),
+                    color = Color.White.copy(0.5f)
+                )
+            }
         }
-        IconButton(onClick = onNewChat) {
-            Icon(Icons.Rounded.AddComment, "New Chat", tint = DarkOnSurface.copy(0.75f))
-        }
-        IconButton(onClick = onBubble) {
-            Icon(Icons.Rounded.BubbleChart, "Float", tint = DarkOnSurface.copy(0.75f))
-        }
-        IconButton(onClick = onSettings) {
-            Icon(Icons.Rounded.Settings, "Settings", tint = DarkOnSurface.copy(0.75f))
+        // Icon actions — borderless
+        HoloIconBtn(Icons.Rounded.AddComment, "New Chat", accentColor, onClick = onNewChat)
+        Spacer(Modifier.width(2.dp))
+        HoloIconBtn(Icons.Rounded.BubbleChart, "Float", accentColor, onClick = onBubble)
+        Spacer(Modifier.width(2.dp))
+        HoloIconBtn(Icons.Rounded.Settings, "Settings", accentColor, onClick = onSettings)
+    }
+}
+
+@Composable
+private fun HoloIconBtn(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    desc: String,
+    accentColor: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        color = Color.Transparent,
+        modifier = Modifier.size(36.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, desc, tint = Color.White.copy(0.6f), modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -254,8 +263,16 @@ private fun AnimationStatePanel(
 ) {
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        Text(
+            "STATES.",
+            style = MaterialTheme.typography.labelSmall.copy(
+                letterSpacing = 2.sp
+            ),
+            color = Color.White.copy(0.35f),
+            modifier = Modifier.padding(start = 2.dp, bottom = 2.dp)
+        )
         AgentState.entries.forEach { state ->
             AnimStateCard(state = state, isActive = state == currentState)
         }
@@ -270,35 +287,67 @@ private fun AnimStateCard(state: AgentState, isActive: Boolean) {
         AgentState.TALKING   -> Color(0xFF00E676)
         AgentState.WORKING   -> Color(0xFFFF9800)
     }
-    val icon = when (state) {
-        AgentState.IDLE      -> "💤"
-        AgentState.LISTENING -> "👂"
-        AgentState.TALKING   -> "💬"
-        AgentState.WORKING   -> "⚙️"
+    // Sci-fi silhouette symbols for each state
+    val symbol = when (state) {
+        AgentState.IDLE      -> "⬡"
+        AgentState.LISTENING -> "◎"
+        AgentState.TALKING   -> "◈"
+        AgentState.WORKING   -> "⊛"
+    }
+    val pose = when (state) {
+        AgentState.IDLE      -> "IDLE"
+        AgentState.LISTENING -> "LISTEN"
+        AgentState.TALKING   -> "TALK"
+        AgentState.WORKING   -> "WORK"
     }
 
+    val borderAlpha by animateFloatAsState(
+        targetValue = if (isActive) 0.9f else 0.2f,
+        animationSpec = tween(300), label = "border"
+    )
+    val bgAlpha by animateFloatAsState(
+        targetValue = if (isActive) 0.22f else 0.07f,
+        animationSpec = tween(300), label = "bg"
+    )
     val scale by animateFloatAsState(
-        targetValue = if (isActive) 1.05f else 1f,
+        targetValue = if (isActive) 1.04f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "state_scale"
+        label = "scale"
     )
 
     Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = if (isActive) color.copy(0.18f) else Color(0xFF080C1A).copy(0.75f),
-        border = BorderStroke(if (isActive) 1.5.dp else 0.8.dp, color.copy(if (isActive) 0.85f else 0.25f)),
-        modifier = Modifier.width(68.dp).scale(scale)
+        shape = RoundedCornerShape(10.dp),
+        color = color.copy(bgAlpha),
+        border = BorderStroke(
+            width = if (isActive) 1.5.dp else 0.7.dp,
+            color = color.copy(borderAlpha)
+        ),
+        modifier = Modifier.width(72.dp).height(80.dp).scale(scale)
     ) {
         Column(
-            Modifier.padding(6.dp),
+            Modifier.fillMaxSize().padding(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(icon, style = MaterialTheme.typography.bodyMedium)
+            // Top: state indicator dot
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Box(
+                    Modifier
+                        .size(5.dp)
+                        .background(color.copy(if (isActive) 1f else 0.3f), CircleShape)
+                )
+            }
+            // Center: large symbol
             Text(
-                state.name.lowercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = color,
+                symbol,
+                style = MaterialTheme.typography.titleLarge,
+                color = color.copy(if (isActive) 1f else 0.5f)
+            )
+            // Bottom: label
+            Text(
+                pose,
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
+                color = color.copy(if (isActive) 0.9f else 0.4f),
                 maxLines = 1
             )
         }
@@ -306,7 +355,7 @@ private fun AnimStateCard(state: AgentState, isActive: Boolean) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Floating action button (holographic style)
+// Floating action button — large double-ring sci-fi style (matches reference)
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun HoloFab(
@@ -317,25 +366,47 @@ private fun HoloFab(
     onClick: () -> Unit,
     badge: Int? = null
 ) {
-    val scale by animateFloatAsState(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "fab")
-    Box {
+    val inf = rememberInfiniteTransition(label = "fab_pulse")
+    val pulse by inf.animateFloat(
+        initialValue = 0.85f, targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(tween(1400, easing = EaseInOutSine), RepeatMode.Reverse),
+        label = "fab_p"
+    )
+
+    Box(contentAlignment = Alignment.Center) {
+        // Outer decorative ring
+        Box(
+            Modifier
+                .size(90.dp)
+                .background(Color.Transparent, CircleShape)
+                .border(0.8.dp, borderColor.copy(0.25f * pulse), CircleShape)
+        )
+        // Middle ring
+        Box(
+            Modifier
+                .size(78.dp)
+                .background(Color.Transparent, CircleShape)
+                .border(1.2.dp, borderColor.copy(0.5f * pulse), CircleShape)
+        )
+        // Inner filled button
         Surface(
             onClick = onClick,
             shape = CircleShape,
             color = containerColor,
-            border = BorderStroke(1.5.dp, borderColor.copy(0.7f)),
-            modifier = Modifier.size(52.dp).scale(scale)
+            border = BorderStroke(2.dp, borderColor.copy(0.85f)),
+            modifier = Modifier.size(62.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
+                Icon(icon, null, tint = tint, modifier = Modifier.size(26.dp))
             }
         }
+        // Badge
         if (badge != null && badge > 0) {
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
                     .offset(x = 4.dp, y = (-4).dp)
-                    .size(16.dp)
+                    .size(18.dp)
                     .background(borderColor, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
@@ -437,13 +508,35 @@ private fun ChatOverlayPanel(
 
             // Error
             AnimatedVisibility(visible = error != null) {
-                error?.let {
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = DarkError,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                    )
+                val ctx = LocalContext.current
+                error?.let { errMsg ->
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                        Text(
+                            errMsg,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = DarkError
+                        )
+                        if (errMsg.contains("Accessibility", ignoreCase = true)) {
+                            Spacer(Modifier.height(4.dp))
+                            Surface(
+                                onClick = {
+                                    ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                    })
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFFFF5252).copy(0.15f),
+                                border = BorderStroke(1.dp, Color(0xFFFF5252).copy(0.5f))
+                            ) {
+                                Text(
+                                    "Open Accessibility Settings →",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFFFF5252),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
