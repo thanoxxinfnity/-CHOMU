@@ -32,7 +32,7 @@ object ObjLoader {
         mesh
     }
 
-    private fun parseObj(context: Context, assetPath: String): ObjMesh? = try {
+    private fun parseObj(context: Context, assetPath: String): ObjMesh? { return try {
         val positions = mutableListOf<Float>()
         val normals = mutableListOf<Float>()
         val texCoords = mutableListOf<Float>()
@@ -142,7 +142,7 @@ object ObjLoader {
     } catch (e: Exception) {
         Log.e(TAG, "Error parsing OBJ", e)
         null
-    }
+    } }
 
     private fun parseFaceVertex(token: String): IntArray {
         val parts = token.split("/")

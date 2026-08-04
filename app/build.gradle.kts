@@ -48,7 +48,7 @@ android {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
 
-    aaptOptions {
+    androidResources {
         noCompress += listOf("obj", "glb", "gltf")
     }
 }
