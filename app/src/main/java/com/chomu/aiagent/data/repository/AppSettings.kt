@@ -7,6 +7,7 @@ import androidx.security.crypto.MasterKey
 import com.chomu.aiagent.domain.model.ApiConfig
 import com.chomu.aiagent.domain.model.ApiProvider
 import com.chomu.aiagent.domain.model.DEFAULT_SYSTEM_PROMPT
+import com.chomu.aiagent.ui.components.VoiceGender
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,5 +50,18 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
             putInt("max_tokens", config.maxTokens)
             putString("system_prompt", config.systemPrompt)
         }.apply()
+    }
+
+    fun getVoiceGender(): VoiceGender =
+        VoiceGender.valueOf(prefs.getString("voice_gender", VoiceGender.SWARA_FEMALE.name)!!)
+
+    fun saveVoiceGender(gender: VoiceGender) {
+        prefs.edit().putString("voice_gender", gender.name).apply()
+    }
+
+    fun isVoiceEnabled(): Boolean = prefs.getBoolean("voice_enabled", true)
+
+    fun saveVoiceEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("voice_enabled", enabled).apply()
     }
 }

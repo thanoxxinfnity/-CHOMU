@@ -8,6 +8,7 @@ import com.chomu.aiagent.data.repository.AppSettings
 import com.chomu.aiagent.data.repository.LLMRepository
 import com.chomu.aiagent.domain.model.*
 import com.chomu.aiagent.service.FloatingBubbleService
+import com.chomu.aiagent.ui.components.VoiceManager
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -30,7 +31,8 @@ data class ChatUiState(
 class ChatViewModel @Inject constructor(
     application: Application,
     private val repository: LLMRepository,
-    private val appSettings: AppSettings
+    private val appSettings: AppSettings,
+    private val voiceManager: VoiceManager
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -44,6 +46,8 @@ class ChatViewModel @Inject constructor(
                 _uiState.update { it.copy(messages = messages) }
             }
         }
+        // Apply saved voice preference
+        voiceManager.setGender(appSettings.getVoiceGender())
     }
 
     fun onInputChange(text: String) {
@@ -66,6 +70,7 @@ class ChatViewModel @Inject constructor(
         }
 
         val userMsg = Message(content = text, isUser = true)
+        voiceManager.stop()
         _uiState.update { it.copy(inputText = "", isLoading = true, agentState = AgentState.TALKING, error = null) }
 
         viewModelScope.launch {
@@ -89,12 +94,20 @@ class ChatViewModel @Inject constructor(
                               else Message(content = response, isUser = false)
                 repository.saveMessage(agentMsg)
                 _uiState.update { it.copy(isLoading = false, agentState = AgentState.IDLE, operationMode = OperationMode.CONVERSATIONAL) }
+                // Auto-speak AI response if voice enabled
+                if (appSettings.isVoiceEnabled() && !agentMsg.isError) {
+                    voiceManager.speak(agentMsg.content)
+                }
             }.onFailure { err ->
                 val errMsg = Message(content = "Error: ${err.message}", isUser = false, isError = true)
                 repository.saveMessage(errMsg)
                 _uiState.update { it.copy(isLoading = false, agentState = AgentState.IDLE, error = err.message) }
             }
         }
+    }
+
+    fun replayMessage(content: String) {
+        voiceManager.speak(content)
     }
 
     private fun processAutomationResponse(raw: String): Message {
@@ -139,15 +152,35 @@ class ChatViewModel @Inject constructor(
         getApplication<Application>().sendBroadcast(intent)
     }
 
+    /**
+     * Smarter intent detection using scoring.
+     * Returns true only when there's a clear automation command, not just a conversational question.
+     */
     private fun detectTaskIntent(text: String): Boolean {
-        val keywords = listOf(
-            "open ", "launch ", "send message", "call ", "search for", "play ",
-            "book ", "navigate to", "set alarm", "take screenshot", "turn on",
-            "turn off", "click on", "scroll ", "type ", "swipe ", "go to ",
-            "download ", "install ", "close ", "switch to"
+        val lower = text.trim().lowercase()
+
+        // Pure conversation signals — bail out immediately
+        val conversationStarters = listOf(
+            "what ", "how ", "why ", "who ", "when ", "where ", "which ",
+            "tell me", "explain", "describe", "what is", "what are",
+            "can you ", "could you ", "would you ", "should i",
+            "hi ", "hello", "hey ", "thanks", "thank you", "good ",
+            "ok ", "okay ", "yes", "no ", "nah", "hmm", "lol",
+            "bro", "yar", "kya", "mujhe batao", "bata", "samjhao"
         )
-        val lower = text.lowercase()
-        return keywords.any { lower.contains(it) }
+        if (conversationStarters.any { lower.startsWith(it) }) return false
+        // Question ending without clear action verb = conversation
+        if (lower.endsWith("?") && !lower.contains("kaise") &&
+            automationVerbs.none { lower.startsWith(it) }) return false
+
+        // App names are strong automation signals
+        val hasAppName = knownApps.any { lower.contains(it) }
+
+        // Automation verb at start of sentence is the strongest signal
+        val hasActionVerb = automationVerbs.any { lower.startsWith(it) } ||
+            automationPhrases.any { lower.contains(it) }
+
+        return hasActionVerb || hasAppName
     }
 
     fun setVoiceListening(active: Boolean) {
@@ -155,6 +188,24 @@ class ChatViewModel @Inject constructor(
             isVoiceListening = active,
             agentState = if (active) AgentState.LISTENING else AgentState.IDLE
         )}
+    }
+
+    fun newChat() {
+        voiceManager.stop()
+        viewModelScope.launch {
+            repository.clearHistory()
+            _uiState.update { it.copy(
+                automationLog = emptyList(),
+                error = null,
+                agentState = AgentState.IDLE,
+                operationMode = OperationMode.CONVERSATIONAL
+            )}
+        }
+    }
+
+    fun stopTask() {
+        voiceManager.stop()
+        _uiState.update { it.copy(agentState = AgentState.IDLE, operationMode = OperationMode.CONVERSATIONAL, isLoading = false) }
     }
 
     fun clearHistory() {
@@ -174,6 +225,38 @@ class ChatViewModel @Inject constructor(
         getApplication<Application>().stopService(intent)
     }
 }
+
+private val automationVerbs = listOf(
+    "open ", "launch ", "close ", "start ",
+    "send ", "call ", "video call", "dial ",
+    "play ", "pause ", "stop ", "skip ", "next ",
+    "set alarm", "set a timer", "set reminder", "remind me",
+    "take screenshot", "capture ",
+    "turn on", "turn off", "enable ", "disable ",
+    "click ", "tap ", "press ", "swipe ", "scroll ",
+    "type ", "search for", "search on", "look up",
+    "navigate to", "go to ", "directions to",
+    "download ", "install ", "uninstall ",
+    "switch to", "share ", "forward ", "delete ",
+    "increase ", "decrease ", "volume ", "mute ", "unmute ",
+    "book ", "order ", "buy ", "purchase "
+)
+
+private val automationPhrases = listOf(
+    "send message", "send a message", "voice message",
+    "open settings", "open camera", "open maps",
+    "set an alarm", "wake me up", "my favorite",
+    "for me on", "on my phone", "from my phone"
+)
+
+private val knownApps = listOf(
+    "whatsapp", "instagram", "youtube", "twitter", "facebook",
+    "gmail", "google maps", "spotify", "netflix", "telegram",
+    "snapchat", "linkedin", "tiktok", "uber", "ola",
+    "swiggy", "zomato", "amazon", "flipkart", "paytm",
+    "phonepe", "gpay", "chrome", "settings", "camera",
+    "gallery", "contacts", "dialer", "calculator", "clock"
+)
 
 private const val AUTOMATION_SYSTEM_PROMPT = """You are CHOMU, an Android phone automation agent.
 Respond ONLY with valid JSON, no other text whatsoever:

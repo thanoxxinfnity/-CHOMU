@@ -50,8 +50,13 @@ class AgentAutomationService : AccessibilityService() {
             addAction("com.chomu.aiagent.AUTOMATION_ACTION")
             addAction("com.chomu.aiagent.STOP_AUTOMATION")
         }
-        registerReceiver(actionReceiver, filter, RECEIVER_NOT_EXPORTED)
-        Log.d(TAG, "AgentAutomationService connected")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(actionReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(actionReceiver, filter)
+        }
+        Log.d(TAG, "AgentAutomationService connected and receiver registered")
     }
 
     override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {
@@ -147,27 +152,34 @@ class AgentAutomationService : AccessibilityService() {
     }
 
     private fun findNode(root: AccessibilityNodeInfo, targetId: String?): AccessibilityNodeInfo? {
-        if (targetId.isNullOrBlank()) {
-            // Return first clickable node as fallback
-            return findFirstClickable(root)
-        }
-        // Try by resource ID
-        val byId = root.findAccessibilityNodeInfosByViewId(targetId)
-        if (byId.isNotEmpty()) return byId[0]
+        if (targetId.isNullOrBlank()) return findFirstClickable(root)
 
-        // Try by text/content description
-        val byText = root.findAccessibilityNodeInfosByText(targetId)
-        if (byText.isNotEmpty()) return byText[0]
+        // Try by resource ID first (most reliable)
+        runCatching { root.findAccessibilityNodeInfosByViewId(targetId) }
+            .getOrNull()?.firstOrNull()?.let { return it }
+
+        // Try by exact text
+        runCatching { root.findAccessibilityNodeInfosByText(targetId) }
+            .getOrNull()?.firstOrNull()?.let { return it }
+
+        // Try by content description (partial match via text search)
+        runCatching {
+            root.findAccessibilityNodeInfosByText(targetId.take(20))
+        }.getOrNull()?.firstOrNull { it.contentDescription?.contains(targetId, ignoreCase = true) == true }
+            ?.let { return it }
 
         return null
     }
 
     private fun findFirstClickable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        if (node.isClickable && node.isEnabled) return node
+        if (node.isClickable && node.isEnabled && node.isVisibleToUser) return node
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val found = findFirstClickable(child)
-            if (found != null) return found
+            if (found != null) {
+                if (found !== child) child.recycle()
+                return found
+            }
             child.recycle()
         }
         return null

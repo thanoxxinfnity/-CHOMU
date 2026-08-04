@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.Switch
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,6 +19,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.chomu.aiagent.domain.model.ApiProvider
+import com.chomu.aiagent.ui.components.VoiceGender
 import com.chomu.aiagent.ui.theme.*
 import com.chomu.aiagent.ui.viewmodel.SettingsViewModel
 import com.chomu.aiagent.ui.viewmodel.defaultGeminiModels
@@ -142,6 +144,63 @@ fun SettingsScreen(
                             isLoading = state.isFetchingModels
                         )
                     }
+                }
+
+                // Voice settings
+                SettingsCard(title = "Voice & Speech") {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                "Auto-speak responses",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = DarkOnSurface
+                            )
+                            Text(
+                                "CHOMU bolega apne aap",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = DarkOnSurface.copy(0.5f)
+                            )
+                        }
+                        Switch(
+                            checked = state.voiceEnabled,
+                            onCheckedChange = { viewModel.update { copy(voiceEnabled = it) } },
+                            colors = SwitchDefaults.colors(checkedThumbColor = DarkPrimary, checkedTrackColor = DarkPrimary.copy(0.4f))
+                        )
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "Voice character",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = DarkOnSurface.copy(0.6f)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ProviderChip(
+                            label = "♂  Madhur (Male)",
+                            selected = state.voiceGender == VoiceGender.MADHUR_MALE,
+                            onClick = { viewModel.update { copy(voiceGender = VoiceGender.MADHUR_MALE) } },
+                            modifier = Modifier.weight(1f)
+                        )
+                        ProviderChip(
+                            label = "♀  Swara (Female)",
+                            selected = state.voiceGender == VoiceGender.SWARA_FEMALE,
+                            onClick = { viewModel.update { copy(voiceGender = VoiceGender.SWARA_FEMALE) } },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "hi-IN-MadhurNeural / hi-IN-SwaraNeural",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = DarkPrimary.copy(0.6f)
+                    )
                 }
 
                 // Generation parameters

@@ -6,6 +6,8 @@ import com.chomu.aiagent.data.repository.AppSettings
 import com.chomu.aiagent.data.repository.LLMRepository
 import com.chomu.aiagent.domain.model.ApiConfig
 import com.chomu.aiagent.domain.model.ApiProvider
+import com.chomu.aiagent.ui.components.VoiceGender
+import com.chomu.aiagent.ui.components.VoiceManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -23,6 +25,8 @@ data class SettingsUiState(
     val temperature: Float = 0.7f,
     val maxTokens: Int = 2048,
     val systemPrompt: String = "",
+    val voiceGender: VoiceGender = VoiceGender.SWARA_FEMALE,
+    val voiceEnabled: Boolean = true,
     val isFetchingModels: Boolean = false,
     val savedSuccess: Boolean = false,
     val error: String? = null
@@ -31,7 +35,8 @@ data class SettingsUiState(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val appSettings: AppSettings,
-    private val repository: LLMRepository
+    private val repository: LLMRepository,
+    private val voiceManager: VoiceManager
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
@@ -50,7 +55,9 @@ class SettingsViewModel @Inject constructor(
             nvidiaBaseUrl = cfg.nvidiaBaseUrl,
             temperature = cfg.temperature,
             maxTokens = cfg.maxTokens,
-            systemPrompt = cfg.systemPrompt
+            systemPrompt = cfg.systemPrompt,
+            voiceGender = appSettings.getVoiceGender(),
+            voiceEnabled = appSettings.isVoiceEnabled()
         )}
     }
 
@@ -67,6 +74,9 @@ class SettingsViewModel @Inject constructor(
             maxTokens = s.maxTokens,
             systemPrompt = s.systemPrompt
         ))
+        appSettings.saveVoiceGender(s.voiceGender)
+        appSettings.saveVoiceEnabled(s.voiceEnabled)
+        voiceManager.setGender(s.voiceGender)
         _state.update { it.copy(savedSuccess = true, error = null) }
     }
 

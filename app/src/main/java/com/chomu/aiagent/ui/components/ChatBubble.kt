@@ -5,6 +5,8 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PlayCircleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,7 +21,11 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
-fun ChatBubble(message: Message, modifier: Modifier = Modifier) {
+fun ChatBubble(
+    message: Message,
+    modifier: Modifier = Modifier,
+    onReplay: (() -> Unit)? = null
+) {
     val isUser = message.isUser
     val timeStr = remember(message.timestamp) {
         SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(message.timestamp))
@@ -78,14 +84,50 @@ fun ChatBubble(message: Message, modifier: Modifier = Modifier) {
                 AutomationLogChip(log = message.automationLog)
             }
 
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = timeStr,
-                style = MaterialTheme.typography.labelSmall,
-                color = DarkOnSurface.copy(alpha = 0.4f),
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
+            // Replay button + timestamp row (only for AI messages)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+                modifier = Modifier.padding(horizontal = 2.dp, vertical = 2.dp)
+            ) {
+                if (!isUser && onReplay != null) {
+                    ReplayButton(onClick = onReplay)
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(
+                    text = timeStr,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = DarkOnSurface.copy(alpha = 0.4f),
+                    modifier = Modifier.padding(horizontal = 2.dp)
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun ReplayButton(onClick: () -> Unit) {
+    var isPlaying by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPlaying) 1.2f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "replay_scale"
+    )
+
+    IconButton(
+        onClick = {
+            isPlaying = true
+            onClick()
+            isPlaying = false
+        },
+        modifier = Modifier.size(28.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.PlayCircleOutline,
+            contentDescription = "Replay voice",
+            tint = DarkPrimary.copy(alpha = 0.75f),
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
