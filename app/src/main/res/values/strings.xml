@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CHOMU</string>
+    <string name="accessibility_service_label">CHOMU AI Agent Automation</string>
+    <string name="accessibility_service_description">Allows CHOMU to read and interact with screen elements to perform automated tasks on your behalf.</string>
+</resources>

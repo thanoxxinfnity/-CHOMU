@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Glow circle background -->
+    <path
+        android:fillColor="#1A7B9FFF"
+        android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0"/>
+
+    <!-- CHOMU star symbol (✦) -->
+    <path
+        android:fillColor="#7B9FFF"
+        android:pathData="M54,18 L57.5,49 L88,54 L57.5,59 L54,90 L50.5,59 L20,54 L50.5,49 Z"/>
+
+    <!-- Inner star -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.8"
+        android:pathData="M54,36 L55.8,50.2 L70,54 L55.8,57.8 L54,72 L52.2,57.8 L38,54 L52.2,50.2 Z"/>
+</vector>
