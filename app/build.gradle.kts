@@ -48,8 +48,17 @@ android {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
 
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a")
+            isUniversalApk = false
+        }
+    }
+
     androidResources {
-        noCompress += listOf("obj", "glb", "gltf")
+        noCompress += listOf("glb", "gltf")
     }
 }
 
