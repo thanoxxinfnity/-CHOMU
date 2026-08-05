@@ -10,6 +10,7 @@ import com.chomu.aiagent.data.repository.AppSettings
 import com.chomu.aiagent.data.repository.LLMRepository
 import com.chomu.aiagent.domain.model.*
 import com.chomu.aiagent.service.FloatingBubbleService
+import com.chomu.aiagent.ui.components.AnimationController
 import com.chomu.aiagent.ui.components.VoiceManager
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
@@ -26,7 +27,8 @@ data class ChatUiState(
     val inputText: String = "",
     val error: String? = null,
     val automationLog: List<String> = emptyList(),
-    val isVoiceListening: Boolean = false
+    val isVoiceListening: Boolean = false,
+    val pendingAnimJson: String? = null  // raw JSON from NVIDIA NIM for 3D animation
 )
 
 @HiltViewModel
@@ -78,6 +80,13 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             repository.saveMessage(userMsg)
 
+            // Animation commands take priority — they call NVIDIA NIM with a special prompt
+            val animName = detectAnimationCommand(text)
+            if (animName != null && config.provider == ApiProvider.NVIDIA_NIM && config.nvidiaApiKey.isNotBlank()) {
+                generateAnimation(animName, config)
+                return@launch
+            }
+
             val isTaskCommand = detectTaskIntent(text)
             val mode = if (isTaskCommand) OperationMode.TASK_AUTOMATION else OperationMode.CONVERSATIONAL
             _uiState.update { it.copy(
@@ -96,7 +105,6 @@ class ChatViewModel @Inject constructor(
                               else Message(content = response, isUser = false)
                 repository.saveMessage(agentMsg)
                 _uiState.update { it.copy(isLoading = false, agentState = AgentState.IDLE, operationMode = OperationMode.CONVERSATIONAL) }
-                // Auto-speak AI response if voice enabled
                 if (appSettings.isVoiceEnabled() && !agentMsg.isError) {
                     voiceManager.speak(agentMsg.content)
                 }
@@ -106,6 +114,56 @@ class ChatViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = false, agentState = AgentState.IDLE, error = err.message) }
             }
         }
+    }
+
+    private suspend fun generateAnimation(animName: String, config: ApiConfig) {
+        _uiState.update { it.copy(agentState = AgentState.WORKING) }
+        val animConfig = config.copy(
+            systemPrompt = AnimationController.buildAnimationPrompt(animName),
+            maxTokens = 2048
+        )
+        repository.sendMessage(
+            userMessage = "Generate the '$animName' animation now. Output ONLY valid JSON.",
+            history = emptyList(),
+            config = animConfig
+        ).onSuccess { json ->
+            val msg = Message(content = "Performing $animName! ✨", isUser = false)
+            repository.saveMessage(msg)
+            _uiState.update { it.copy(
+                isLoading = false,
+                agentState = AgentState.IDLE,
+                pendingAnimJson = json
+            )}
+            if (appSettings.isVoiceEnabled()) voiceManager.speak(msg.content)
+        }.onFailure { err ->
+            val msg = Message(content = "I'll do the $animName for you!", isUser = false)
+            repository.saveMessage(msg)
+            _uiState.update { it.copy(isLoading = false, agentState = AgentState.IDLE) }
+        }
+    }
+
+    private fun detectAnimationCommand(text: String): String? {
+        val lower = text.lowercase()
+        val keywords = mapOf(
+            "dance" to "dance",   "danse" to "dance",   "danco" to "dance",
+            "nacho" to "dance",   "nachna" to "dance",  "naacho" to "dance",
+            "wave" to "wave",     "haath hilao" to "wave",
+            "spin" to "spin",     "ghoomna" to "spin",  "ghoom" to "spin",
+            "bow" to "bow",       "jhukna" to "bow",
+            "salute" to "salute",
+            "jump" to "jump",     "kudna" to "jump",
+            "celebrate" to "celebrate", "cheer" to "celebrate",
+            "thinking animation" to "think", "socho" to "think",
+            "happy animation" to "happy",   "khush" to "happy",
+            "sad animation" to "sad",       "dukhi" to "sad",
+            "angry animation" to "angry",   "gussa" to "angry",
+            "stretch" to "stretch",
+            "yoga" to "yoga",
+            "punch" to "punch",
+            "clap" to "clap",     "taali" to "clap",
+            "exercise" to "exercise"
+        )
+        return keywords.entries.firstOrNull { lower.contains(it.key) }?.value
     }
 
     fun replayMessage(content: String) {

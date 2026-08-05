@@ -86,7 +86,8 @@ fun ChatScreen(
         // ── 3. Full-screen 3D companion ───────────────────────────────
         CompanionViewer(
             agentState = uiState.agentState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            pendingAnimJson = uiState.pendingAnimJson
         )
 
         // ── 4. Top bar ────────────────────────────────────────────────

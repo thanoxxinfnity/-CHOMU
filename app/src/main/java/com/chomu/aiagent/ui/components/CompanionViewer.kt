@@ -20,54 +20,66 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.chomu.aiagent.domain.model.AgentState
-import kotlinx.coroutines.launch
 
 @Composable
 fun CompanionViewer(
     agentState: AgentState,
     modifier: Modifier = Modifier,
-    isCompact: Boolean = false
+    isCompact: Boolean = false,
+    pendingAnimJson: String? = null
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     var isLoading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
-    val renderer = remember { GlCompanionRenderer() }
 
-    // Update renderer state when AgentState changes
-    LaunchedEffect(agentState) {
-        renderer.agentState = agentState
+    val animController = remember { AnimationController() }
+    val renderer = remember {
+        GlbCompanionRenderer().also { it.animController = animController }
     }
 
-    // Load mesh asynchronously — clears old cache format on first run
+    // Keep renderer + controller in sync with agent state
+    LaunchedEffect(agentState) {
+        renderer.agentState = agentState
+        animController.agentState = agentState
+    }
+
+    // Load GLB model once
     LaunchedEffect(Unit) {
-        scope.launch {
-            isLoading = true
-            loadError = null
-            try {
-                val mesh = ObjLoader.load(context, "models/companion.obj")
-                if (mesh != null) {
-                    renderer.mesh = mesh
-                    isLoading = false
-                } else {
-                    loadError = "Model parse failed"
-                    isLoading = false
-                }
-            } catch (e: Exception) {
-                loadError = "Load error: ${e.message}"
+        isLoading = true
+        loadError = null
+        try {
+            val glbModel = GlbLoader.load(context, "models/companion.glb")
+            if (glbModel != null) {
+                renderer.model = glbModel
+                animController.model = glbModel
+                isLoading = false
+            } else {
+                loadError = "Model parse failed"
                 isLoading = false
             }
+        } catch (e: Exception) {
+            loadError = "Load error: ${e.message}"
+            isLoading = false
         }
     }
 
-    // Animated glow ring around the viewer based on state
+    // Apply AI-generated animation clip when ViewModel sends one
+    LaunchedEffect(pendingAnimJson) {
+        pendingAnimJson ?: return@LaunchedEffect
+        val clip = AnimationController.parseAiClip(pendingAnimJson)
+        if (clip != null) {
+            animController.setAiClip(clip)
+        }
+    }
+
+    // Glow ring responds to agent state
     val glowAlpha by animateFloatAsState(
         targetValue = when (agentState) {
-            AgentState.IDLE -> 0.3f
+            AgentState.IDLE      -> 0.3f
             AgentState.LISTENING -> 0.8f
-            AgentState.TALKING -> 1.0f
-            AgentState.WORKING -> 0.9f
+            AgentState.TALKING   -> 1.0f
+            AgentState.WORKING   -> 0.9f
         },
         animationSpec = tween(500), label = "glow"
     )
@@ -76,18 +88,18 @@ fun CompanionViewer(
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
         targetValue = when (agentState) {
-            AgentState.IDLE -> 1.02f
+            AgentState.IDLE      -> 1.02f
             AgentState.LISTENING -> 1.06f
-            AgentState.TALKING -> 1.08f
-            AgentState.WORKING -> 1.05f
+            AgentState.TALKING   -> 1.08f
+            AgentState.WORKING   -> 1.05f
         },
         animationSpec = infiniteRepeatable(
             animation = tween(
                 durationMillis = when (agentState) {
-                    AgentState.IDLE -> 2000
+                    AgentState.IDLE      -> 2000
                     AgentState.LISTENING -> 800
-                    AgentState.TALKING -> 400
-                    AgentState.WORKING -> 600
+                    AgentState.TALKING   -> 400
+                    AgentState.WORKING   -> 600
                 },
                 easing = EaseInOutSine
             ),
@@ -96,10 +108,10 @@ fun CompanionViewer(
     )
 
     val stateGlowColor = when (agentState) {
-        AgentState.IDLE -> Color(0xFF4A90D9)
+        AgentState.IDLE      -> Color(0xFF4A90D9)
         AgentState.LISTENING -> Color(0xFF00BFFF)
-        AgentState.TALKING -> Color(0xFF00E676)
-        AgentState.WORKING -> Color(0xFFFF9800)
+        AgentState.TALKING   -> Color(0xFF00E676)
+        AgentState.WORKING   -> Color(0xFFFF9800)
     }
 
     Box(
@@ -116,13 +128,9 @@ fun CompanionViewer(
         contentAlignment = Alignment.Center
     ) {
         AndroidView(
-            factory = { ctx ->
-                createGlSurfaceView(ctx, renderer)
-            },
+            factory = { ctx -> createGlbSurfaceView(ctx, renderer) },
             modifier = Modifier.fillMaxSize(),
-            update = { view ->
-                renderer.agentState = agentState
-            }
+            update  = { renderer.agentState = agentState }
         )
 
         if (isLoading) {
@@ -148,15 +156,13 @@ fun CompanionViewer(
         if (loadError != null && !isLoading) {
             FallbackCompanionAvatar(agentState = agentState, isCompact = isCompact)
         }
-
     }
 }
 
-private fun createGlSurfaceView(context: Context, renderer: GlCompanionRenderer): GLSurfaceView {
+private fun createGlbSurfaceView(context: Context, renderer: GlbCompanionRenderer): GLSurfaceView {
     return object : GLSurfaceView(context) {
         private var lastX = 0f
-
-        override fun onTouchEvent(event: MotionEvent): Boolean {
+        override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> lastX = event.x
                 MotionEvent.ACTION_MOVE -> {
@@ -179,7 +185,7 @@ private fun FallbackCompanionAvatar(agentState: AgentState, isCompact: Boolean) 
     val infiniteTransition = rememberInfiniteTransition(label = "fallback")
     val scale by infiniteTransition.animateFloat(
         initialValue = 0.95f,
-        targetValue = 1.05f,
+        targetValue  = 1.05f,
         animationSpec = infiniteRepeatable(
             tween(1200, easing = EaseInOutSine),
             RepeatMode.Reverse
@@ -187,15 +193,15 @@ private fun FallbackCompanionAvatar(agentState: AgentState, isCompact: Boolean) 
     )
 
     val emoji = when (agentState) {
-        AgentState.IDLE -> "😊"
+        AgentState.IDLE      -> "😊"
         AgentState.LISTENING -> "👂"
-        AgentState.TALKING -> "💬"
-        AgentState.WORKING -> "⚙️"
+        AgentState.TALKING   -> "💬"
+        AgentState.WORKING   -> "⚙️"
     }
 
     Text(
-        text = emoji,
+        text  = emoji,
         style = if (isCompact) MaterialTheme.typography.headlineMedium
-        else MaterialTheme.typography.displayMedium
+                else           MaterialTheme.typography.displayMedium
     )
 }
