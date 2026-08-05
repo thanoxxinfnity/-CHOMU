@@ -40,17 +40,22 @@ fun CompanionViewer(
         renderer.agentState = agentState
     }
 
-    // Load mesh asynchronously
+    // Load mesh asynchronously — clears old cache format on first run
     LaunchedEffect(Unit) {
         scope.launch {
             isLoading = true
             loadError = null
-            val mesh = ObjLoader.load(context, "models/companion.obj")
-            if (mesh != null) {
-                renderer.mesh = mesh
-                isLoading = false
-            } else {
-                loadError = "Model load failed"
+            try {
+                val mesh = ObjLoader.load(context, "models/companion.obj")
+                if (mesh != null) {
+                    renderer.mesh = mesh
+                    isLoading = false
+                } else {
+                    loadError = "Model parse failed"
+                    isLoading = false
+                }
+            } catch (e: Exception) {
+                loadError = "Load error: ${e.message}"
                 isLoading = false
             }
         }

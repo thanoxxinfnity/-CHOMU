@@ -56,15 +56,25 @@ class GlCompanionRenderer : GLSurfaceView.Renderer {
         out float vY;
         out float vRegion;
 
-        // Region helpers (character is normalized to [-1,1])
-        float headRegion(float y)  { return smoothstep(0.50, 0.75, y); }
-        float hairRegion(float y)  { return smoothstep(0.65, 0.90, y); }
-        float torsoRegion(float y) { return smoothstep(0.05, 0.45, y) * (1.0 - smoothstep(0.45, 0.65, y)); }
-        float armRegion(float y, float x) {
-            return smoothstep(0.10, 0.50, y) * (1.0 - smoothstep(0.50, 0.70, y))
-                   * smoothstep(0.22, 0.38, abs(x));
+        // Region helpers (character normalized to [-1,1] on Y axis)
+        float headRegion(float y)  { return smoothstep(0.45, 0.70, y); }
+        float hairRegion(float y)  { return smoothstep(0.60, 0.95, y); }
+        // Eye region: narrow band near top of head, off-center on X
+        float eyeRegion(float y, float x) {
+            float eyeY = smoothstep(0.60, 0.68, y) * (1.0 - smoothstep(0.68, 0.76, y));
+            float eyeX = smoothstep(0.05, 0.20, abs(x));
+            return eyeY * eyeX;
         }
-        float legRegion(float y)   { return smoothstep(-1.0, -0.40, y) * (1.0 - smoothstep(-0.40, -0.10, y)); }
+        // Mouth/jaw: lower part of face
+        float jawRegion(float y) {
+            return smoothstep(0.48, 0.56, y) * (1.0 - smoothstep(0.56, 0.64, y));
+        }
+        float torsoRegion(float y) { return smoothstep(0.00, 0.40, y) * (1.0 - smoothstep(0.40, 0.60, y)); }
+        float armRegion(float y, float x) {
+            return smoothstep(0.05, 0.45, y) * (1.0 - smoothstep(0.45, 0.65, y))
+                   * smoothstep(0.18, 0.36, abs(x));
+        }
+        float legRegion(float y) { return smoothstep(-1.0, -0.35, y) * (1.0 - smoothstep(-0.35, -0.05, y)); }
 
         // Smooth 2D rotation
         vec2 rot2D(vec2 v, float a) {
@@ -80,112 +90,137 @@ class GlCompanionRenderer : GLSurfaceView.Renderer {
             float arm   = armRegion(pos.y, pos.x);
             float leg   = legRegion(pos.y);
 
+            float eye = eyeRegion(pos.y, pos.x);
+            float jaw  = jawRegion(pos.y);
+
             if (uAnimState == 0) {
-                // ── IDLE: breathing + micro-sway + hair physics ──
+                // ── IDLE: breathing + blink + sway + hair physics ──
 
-                // Chest breathe: torso expands on Y and Z
-                float breathe = sin(t * 1.15) * 0.022;
+                // Chest breathe (torso rises and falls)
+                float breathe = sin(t * 1.1) * 0.028;
                 pos.y += breathe * torso;
-                pos.z += breathe * 0.6 * torso;
+                pos.z += breathe * 0.5 * torso;
 
-                // Whole-body sway
-                pos.x += sin(t * 0.45) * 0.007;
+                // Gentle whole-body sway
+                pos.x += sin(t * 0.4) * 0.008;
+                pos.y += sin(t * 0.55 + 0.5) * 0.004;
 
-                // Head subtle nod
-                vec2 headNod = rot2D(vec2(pos.y, pos.z), sin(t * 0.7) * 0.025 * head);
+                // Head soft nod
+                vec2 headNod = rot2D(vec2(pos.y, pos.z), sin(t * 0.65) * 0.03 * head);
                 pos.y = mix(pos.y, headNod.x, head);
                 pos.z = mix(pos.z, headNod.y, head);
 
-                // Hair strands sway with lag
-                pos.x += sin(t * 1.1 + pos.y * 4.0) * 0.012 * hair;
-                pos.z += cos(t * 0.9 + pos.y * 3.0) * 0.008 * hair;
+                // Eye blink: fast close every ~3s (squish Y of eye region toward 0)
+                float blinkCycle = mod(t, 3.2);
+                float blink = smoothstep(0.0, 0.06, blinkCycle) * (1.0 - smoothstep(0.06, 0.12, blinkCycle));
+                pos.y -= blink * 0.03 * eye;
 
-                // Weight shift on legs
-                pos.x += sin(t * 0.3) * 0.005 * leg;
+                // Hair strands sway with lag
+                pos.x += sin(t * 1.05 + pos.y * 3.5) * 0.014 * hair;
+                pos.z += cos(t * 0.85 + pos.y * 2.5) * 0.009 * hair;
+
+                // Weight shift on legs (subtle stance sway)
+                pos.x += sin(t * 0.28) * 0.006 * leg;
 
             } else if (uAnimState == 1) {
-                // ── LISTENING: head tilt + lean-in + ear perk ──
+                // ── LISTENING: lean-in + head tilt + attentive blink + arm ──
 
-                // Torso leans slightly forward
-                float upperBody = smoothstep(-0.5, 0.6, pos.y);
-                pos.z += 0.03 * upperBody;
+                // Torso leans slightly forward (attentive posture)
+                float upperBody = smoothstep(-0.5, 0.55, pos.y);
+                pos.z += 0.04 * upperBody;
 
-                // Head tilts to one side, oscillates gently
-                float tiltAngle = sin(t * 1.6) * 0.06;
+                // Head tilts to one side with curious bob
+                float tiltAngle = 0.07 + sin(t * 1.5) * 0.04;
                 vec2 headXY = rot2D(vec2(pos.x, pos.y), tiltAngle * head);
                 pos.x = mix(pos.x, headXY.x, head);
                 pos.y = mix(pos.y, headXY.y, head);
+                pos.y += sin(t * 2.2) * 0.012 * head;
 
-                // Curious head bob
-                pos.y += sin(t * 2.0) * 0.015 * head;
+                // Attentive blinking (slower, eyes wide between blinks)
+                float blinkC = mod(t * 0.9, 4.0);
+                float attBlink = smoothstep(0.0, 0.07, blinkC) * (1.0 - smoothstep(0.07, 0.14, blinkC));
+                pos.y -= attBlink * 0.025 * eye;
 
-                // Hair reacts to head movement
-                pos.x += sin(t * 1.9 + pos.y * 5.0) * 0.015 * hair;
+                // Hair reacts to head tilt
+                pos.x += sin(t * 1.8 + pos.y * 4.5) * 0.016 * hair;
 
-                // Arms: one arm gesturing (listening posture)
+                // Right arm raised slightly (listening gesture)
                 float rightArm = arm * step(0.0, pos.x);
-                pos.y += sin(t * 1.8 + 1.0) * 0.02 * rightArm;
-                pos.z += cos(t * 1.5) * 0.012 * rightArm;
+                pos.y += 0.04 * rightArm + sin(t * 1.7 + 1.0) * 0.018 * rightArm;
+                pos.z += cos(t * 1.4) * 0.014 * rightArm;
 
             } else if (uAnimState == 2) {
-                // ── TALKING: lip-sync + head animation + gestures ──
+                // ── TALKING: lip-sync + head nod + eye blink + gestures ──
 
-                // Jaw/lower-face oscillation (lip sync)
-                float jawY = smoothstep(0.52, 0.62, pos.y) * (1.0 - smoothstep(0.62, 0.72, pos.y));
-                float jaw  = abs(sin(t * 8.5)) * 0.018 * jawY;
-                pos.y -= jaw;
-                pos.z += jaw * 0.5;
+                // Jaw drops open with speech rhythm (lip sync)
+                float jawDrop = abs(sin(t * 7.5)) * 0.03 + abs(sin(t * 13.0)) * 0.012;
+                pos.y -= jawDrop * jaw;
+                pos.z += jawDrop * 0.4 * jaw;
 
-                // Head nod with speech rhythm
-                float nodAngle = sin(t * 4.0) * 0.04;
+                // Head nods with speech energy
+                float nodAngle = sin(t * 3.8) * 0.05 + sin(t * 6.5) * 0.02;
                 vec2 headTilt = rot2D(vec2(pos.y, pos.z), nodAngle * head);
-                pos.y = mix(pos.y, headTilt.x, head * 0.6);
-                pos.z = mix(pos.z, headTilt.y, head * 0.6);
+                pos.y = mix(pos.y, headTilt.x, head * 0.65);
+                pos.z = mix(pos.z, headTilt.y, head * 0.65);
 
-                // Hair energetic movement
-                pos.x += sin(t * 4.0 + pos.y * 3.0) * 0.018 * hair;
-                pos.z += cos(t * 3.5 + pos.x * 2.0) * 0.012 * hair;
+                // Eyes: blink occasionally while talking
+                float blinkT = mod(t, 2.1);
+                float talkBlink = smoothstep(0.0, 0.05, blinkT) * (1.0 - smoothstep(0.05, 0.1, blinkT));
+                pos.y -= talkBlink * 0.025 * eye;
 
-                // Arm gesture waves (hands talking)
-                pos.y += sin(t * 3.8 + pos.x * 2.5) * 0.028 * arm;
-                pos.z += cos(t * 3.2 + pos.x * 3.0) * 0.02  * arm;
-                pos.x += sin(t * 2.5) * 0.015 * arm;
+                // Hair moves energetically with speech
+                pos.x += sin(t * 4.2 + pos.y * 3.0) * 0.020 * hair;
+                pos.z += cos(t * 3.8 + pos.x * 2.0) * 0.014 * hair;
 
-                // Whole body micro-moves with speech
-                pos.x += cos(t * 2.2) * 0.006;
+                // Both arms gesture while talking
+                pos.y += sin(t * 3.5 + pos.x * 2.5) * 0.032 * arm;
+                pos.z += cos(t * 3.0 + pos.x * 3.0) * 0.022 * arm;
+                pos.x += sin(t * 2.4 + pos.y * 1.5) * 0.018 * arm;
+
+                // Subtle body bounce with speech
+                pos.x += cos(t * 2.0) * 0.007;
+                pos.y += sin(t * 4.0) * 0.005 * torso;
 
             } else if (uAnimState == 3) {
-                // ── WORKING: forward lean + scan wave + typing ──
+                // ── WORKING: hunch + scan + typing + focused gaze ──
 
-                // Whole upper body leans forward (focused posture)
-                float upperLean = smoothstep(-0.6, 0.5, pos.y);
-                pos.z += 0.06 * upperLean;
-                pos.y -= 0.015 * upperLean;  // slight hunch
+                // Upper body hunches forward (intense focus)
+                float upperLean = smoothstep(-0.6, 0.55, pos.y);
+                pos.z += 0.07 * upperLean;
+                pos.y -= 0.018 * upperLean;
 
-                // Head nods down (reading/focused)
-                float lookDown = 0.08;
+                // Head looks down intently
+                float lookDown = 0.10;
                 vec2 lookDn = rot2D(vec2(pos.y, pos.z), lookDown * head);
-                pos.y = mix(pos.y, lookDn.x, head * 0.7);
-                pos.z = mix(pos.z, lookDn.y, head * 0.7);
+                pos.y = mix(pos.y, lookDn.x, head * 0.75);
+                pos.z = mix(pos.z, lookDn.y, head * 0.75);
 
-                // Typing rhythm on forearms
-                float typing = step(0.0, sin(t * 9.0)) * 0.014;
-                pos.y -= typing * arm;
-                pos.z += typing * 0.5 * arm;
+                // Eyes narrowed / squinting (focused)
+                pos.y -= 0.012 * eye;
 
-                // Vertical scan wave across whole body
-                float scanY = mod(t * 1.2, 4.0) - 2.0;
-                float scanW = 1.0 - smoothstep(0.0, 0.25, abs(pos.y - scanY));
-                pos.x += sin(t * 14.0 + pos.y * 9.0) * 0.008 * scanW;
+                // Rapid typing rhythm on arms
+                float typingL = step(0.0, sin(t * 10.0)) * 0.016;
+                float typingR = step(0.0, sin(t * 10.0 + 1.57)) * 0.016;
+                float leftArm  = arm * step(pos.x, 0.0);
+                float rightArm = arm * step(0.0, pos.x);
+                pos.y -= typingL * leftArm;
+                pos.y -= typingR * rightArm;
+                pos.z += 0.5 * (typingL * leftArm + typingR * rightArm);
 
-                // Hair floats slightly (energy field)
-                pos.x += sin(t * 2.0 + pos.y * 4.0) * 0.01 * hair;
+                // Vertical scan wave (holographic data processing visual)
+                float scanY = mod(t * 1.4, 4.0) - 2.0;
+                float scanW = 1.0 - smoothstep(0.0, 0.2, abs(pos.y - scanY));
+                pos.x += sin(t * 16.0 + pos.y * 10.0) * 0.010 * scanW;
+
+                // Hair floats (energy field effect)
+                pos.x += sin(t * 2.2 + pos.y * 3.5) * 0.012 * hair;
+                pos.z += cos(t * 1.8 + pos.x * 2.5) * 0.008 * hair;
             }
 
             vFragPos = vec3(uModel * vec4(pos, 1.0));
             vNormal  = normalize(mat3(transpose(inverse(uModel))) * aNormal);
             vY       = pos.y;
-            vRegion  = headRegion(pos.y);
+            vRegion  = headRegion(pos.y) + eyeRegion(pos.y, pos.x) * 2.0;
             gl_Position = uMVP * vec4(pos, 1.0);
         }
     """.trimIndent()
@@ -272,6 +307,9 @@ class GlCompanionRenderer : GLSurfaceView.Renderer {
         program = buildShader(VERT, FRAG)
         cacheLocations()
         startTime = System.currentTimeMillis()
+        // Reset so mesh is re-uploaded into the new GL context (e.g. after screen lock)
+        vertexCount = 0
+        vboIds = IntArray(3)
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
