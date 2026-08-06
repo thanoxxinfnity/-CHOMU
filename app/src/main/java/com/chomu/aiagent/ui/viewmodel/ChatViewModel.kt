@@ -28,7 +28,8 @@ data class ChatUiState(
     val error: String? = null,
     val automationLog: List<String> = emptyList(),
     val isVoiceListening: Boolean = false,
-    val pendingAnimJson: String? = null  // raw JSON from NVIDIA NIM for 3D animation
+    val pendingAnimJson: String? = null,       // AI-generated clip JSON from NVIDIA NIM
+    val pendingBuiltinAnim: String? = null     // name of built-in clip to play immediately
 )
 
 @HiltViewModel
@@ -80,10 +81,17 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             repository.saveMessage(userMsg)
 
-            // Animation commands take priority — they call NVIDIA NIM with a special prompt
+            // Animation commands — built-in clip plays immediately; NIM runs in background if available
             val animName = detectAnimationCommand(text)
-            if (animName != null && config.provider == ApiProvider.NVIDIA_NIM && config.nvidiaApiKey.isNotBlank()) {
-                generateAnimation(animName, config)
+            if (animName != null) {
+                _uiState.update { it.copy(pendingBuiltinAnim = animName) }
+                val msg = Message(content = "Performing $animName! ✨", isUser = false)
+                repository.saveMessage(msg)
+                _uiState.update { it.copy(isLoading = false, agentState = AgentState.IDLE) }
+                if (appSettings.isVoiceEnabled()) voiceManager.speak(msg.content)
+                if (config.provider == ApiProvider.NVIDIA_NIM && config.nvidiaApiKey.isNotBlank()) {
+                    generateAnimation(animName, config)
+                }
                 return@launch
             }
 

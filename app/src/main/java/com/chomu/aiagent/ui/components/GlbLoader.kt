@@ -165,13 +165,29 @@ object GlbLoader {
         val rootIdx = (0 until nodes.length())
             .firstOrNull { nodes.getJSONObject(it).optString("name") == "Root" } ?: 40
 
-        Log.d(TAG, "GLB loaded: ${glbJoints.size} joints, $vertCount vertices, $idxCount indices")
+        // ── Extract embedded texture images ───────────────────────────
+        val images = json.optJSONArray("images")
+        val textureImages: Array<ByteArray> = if (images != null) {
+            Array(images.length()) { i ->
+                val img = images.getJSONObject(i)
+                val bvIdx = img.optInt("bufferView", -1)
+                if (bvIdx < 0) ByteArray(0) else {
+                    val bv = bufferViews.getJSONObject(bvIdx)
+                    val offset = bv.optInt("byteOffset", 0)
+                    val length = bv.getInt("byteLength")
+                    bin.copyOfRange(offset, (offset + length).coerceAtMost(bin.size))
+                }
+            }
+        } else emptyArray()
+
+        Log.d(TAG, "GLB loaded: ${glbJoints.size} joints, $vertCount vertices, $idxCount indices, ${textureImages.size} textures")
         return GlbModel(
             indexBuffer = indexBuf, indexCount = idxCount,
             positionBuffer = posBuf, normalBuffer = normBuf, texCoordBuffer = texBuf,
             jointsBuffer = jointsBuf, weightsBuffer = wgtBuf, vertexCount = vertCount,
             joints = glbJoints, inverseBindMatrices = invBindMats,
-            nodeChildren = childrenMap, rootNodeIndex = rootIdx
+            nodeChildren = childrenMap, rootNodeIndex = rootIdx,
+            textureImages = textureImages
         )
     }
 }

@@ -40,7 +40,12 @@ import com.chomu.aiagent.ui.viewmodel.ChatViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -50,6 +55,7 @@ fun ChatScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showChatPanel by remember { mutableStateOf(true) }
+    var chatDragOffset by remember { mutableStateOf(Offset.Zero) }
     val micPermission = rememberPermissionState(Manifest.permission.RECORD_AUDIO)
 
     val speechLauncher = rememberLauncherForActivityResult(
@@ -87,7 +93,8 @@ fun ChatScreen(
         CompanionViewer(
             agentState = uiState.agentState,
             modifier = Modifier.fillMaxSize(),
-            pendingAnimJson = uiState.pendingAnimJson
+            pendingAnimJson = uiState.pendingAnimJson,
+            pendingBuiltinAnim = uiState.pendingBuiltinAnim
         )
 
         // ── 4. Top bar ────────────────────────────────────────────────
@@ -144,13 +151,14 @@ fun ChatScreen(
             )
         }
 
-        // ── 7. Chat overlay panel (bottom right) ──────────────────────
+        // ── 7. Chat overlay panel (bottom right, draggable) ──────────
         AnimatedVisibility(
             visible = showChatPanel,
             enter = slideInHorizontally { it } + fadeIn(),
             exit = slideOutHorizontally { it } + fadeOut(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
+                .offset { IntOffset(chatDragOffset.x.roundToInt(), chatDragOffset.y.roundToInt()) }
                 .padding(end = 72.dp, bottom = 20.dp)
                 .navigationBarsPadding()
         ) {
@@ -163,7 +171,8 @@ fun ChatScreen(
                 onTextChange = viewModel::onInputChange,
                 onSend = { viewModel.sendMessage() },
                 onClose = { showChatPanel = false },
-                onReplay = { viewModel.replayMessage(it) }
+                onReplay = { viewModel.replayMessage(it) },
+                onHeaderDrag = { chatDragOffset += it }
             )
         }
 
@@ -434,7 +443,8 @@ private fun ChatOverlayPanel(
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     onClose: () -> Unit,
-    onReplay: (String) -> Unit
+    onReplay: (String) -> Unit,
+    onHeaderDrag: (Offset) -> Unit = {}
 ) {
     val listState = rememberLazyListState()
     LaunchedEffect(messages.size) {
@@ -451,12 +461,15 @@ private fun ChatOverlayPanel(
         tonalElevation = 8.dp
     ) {
         Column {
-            // Header: CHANNEL: ALL
+            // Header: CHANNEL: ALL — draggable handle
             Row(
                 Modifier
                     .fillMaxWidth()
                     .background(accentColor.copy(0.12f))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .pointerInput(Unit) {
+                        detectDragGestures { _, dragAmount -> onHeaderDrag(dragAmount) }
+                    },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {

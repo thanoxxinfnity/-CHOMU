@@ -18,7 +18,11 @@ data class GlbModel(
     val joints: List<GlbJoint>,        // ordered by skin.joints[]
     val inverseBindMatrices: Array<FloatArray>,  // 16 floats (col-major) per joint
     val nodeChildren: Map<Int, List<Int>>,
-    val rootNodeIndex: Int              // node index of "Root" bone
+    val rootNodeIndex: Int,             // node index of "Root" bone
+
+    // Textures: raw JPEG/PNG bytes indexed by texture slot
+    // [0] = baseColor, [1] = metallicRoughness, [2] = normal
+    val textureImages: Array<ByteArray> = emptyArray()
 )
 
 data class GlbJoint(

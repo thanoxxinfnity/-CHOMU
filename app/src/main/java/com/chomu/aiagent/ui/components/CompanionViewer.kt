@@ -26,7 +26,8 @@ fun CompanionViewer(
     agentState: AgentState,
     modifier: Modifier = Modifier,
     isCompact: Boolean = false,
-    pendingAnimJson: String? = null
+    pendingAnimJson: String? = null,
+    pendingBuiltinAnim: String? = null
 ) {
     val context = LocalContext.current
 
@@ -64,13 +65,18 @@ fun CompanionViewer(
         }
     }
 
-    // Apply AI-generated animation clip when ViewModel sends one
+    // Apply built-in clip immediately when ViewModel requests one
+    LaunchedEffect(pendingBuiltinAnim) {
+        pendingBuiltinAnim ?: return@LaunchedEffect
+        val clip = AnimationController.builtinClipFor(pendingBuiltinAnim)
+        if (clip != null) animController.setAiClip(clip)
+    }
+
+    // Replace with AI-generated clip if NVIDIA NIM produces one
     LaunchedEffect(pendingAnimJson) {
         pendingAnimJson ?: return@LaunchedEffect
         val clip = AnimationController.parseAiClip(pendingAnimJson)
-        if (clip != null) {
-            animController.setAiClip(clip)
-        }
+        if (clip != null) animController.setAiClip(clip)
     }
 
     // Glow ring responds to agent state
