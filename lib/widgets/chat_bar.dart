@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import '../core/theme.dart';
+import '../core/constants.dart';
 import '../providers/chat_provider.dart';
 import '../providers/companion_provider.dart';
+import '../providers/settings_provider.dart';
 
 class ChatBar extends StatefulWidget {
   const ChatBar({super.key});
@@ -37,9 +39,11 @@ class _ChatBarState extends State<ChatBar> {
   Widget build(BuildContext context) {
     final chat = context.watch<ChatProvider>();
     final companion = context.watch<CompanionProvider>();
+    final settings = context.watch<SettingsProvider>();
     final isListening = chat.isListening;
-    final isLoading = chat.isLoading;
+    final isLoading = chat.isLoading || chat.isStreaming;
     final isSpeaking = companion.state == CompanionState.speaking;
+    final isLiveMode = settings.isNvidiaActive && settings.nvidiaLiveMode;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -66,8 +70,39 @@ class _ChatBarState extends State<ChatBar> {
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Live-mode streaming progress
+                  if (chat.isStreaming)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Container(width: 6, height: 6,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF76B900),
+                              shape: BoxShape.circle,
+                              boxShadow: [BoxShadow(color: const Color(0xFF76B900).withOpacity(0.5), blurRadius: 6)],
+                            ),
+                          ).animate(onPlay: (c) => c.repeat()).fade(begin: 0.3, end: 1, duration: 600.ms),
+                          const SizedBox(width: 6),
+                          const Text('NVIDIA Live …', style: TextStyle(color: Color(0xFF76B900), fontSize: 10, fontWeight: FontWeight.w600)),
+                          const Spacer(),
+                          if (isLiveMode) Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(2),
+                              child: LinearProgressIndicator(
+                                backgroundColor: const Color(0xFF76B900).withOpacity(0.1),
+                                valueColor: const AlwaysStoppedAnimation(Color(0xFF76B900)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Row(
+                  children: [
                   // Mic / Stop button
                   _MicButton(
                     isListening: isListening,
@@ -116,7 +151,7 @@ class _ChatBarState extends State<ChatBar> {
                   const SizedBox(width: 8),
 
                   // Send / Stop speaking button
-                  if (isSpeaking)
+                  if (isSpeaking || chat.isStreaming)
                     _ActionButton(
                       icon: Icons.stop_rounded,
                       color: AppTheme.accentSecondary,
@@ -125,15 +160,17 @@ class _ChatBarState extends State<ChatBar> {
                     )
                   else
                     _ActionButton(
-                      icon: Icons.send_rounded,
+                      icon: isLiveMode ? Icons.send_time_extension_rounded : Icons.send_rounded,
                       color: _hasText && !isLoading
-                          ? AppTheme.accentPrimary
+                          ? (isLiveMode ? const Color(0xFF76B900) : AppTheme.accentPrimary)
                           : AppTheme.textMuted,
                       onTap: _hasText && !isLoading
                           ? () => _sendMessage(chat)
                           : null,
-                      tooltip: 'Send',
+                      tooltip: isLiveMode ? 'Send (Live)' : 'Send',
                     ),
+                ],
+              ),
                 ],
               ),
             ),

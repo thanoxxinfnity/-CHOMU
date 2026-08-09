@@ -5,7 +5,7 @@ class AppConstants {
   static const String hiveBoxMemory = 'long_term_memory';
   static const String hiveBoxSettings = 'settings';
 
-  // Settings keys
+  // Settings keys — generic
   static const String keyApiEndpoint = 'api_endpoint';
   static const String keyApiKey = 'api_key';
   static const String keyModelName = 'model_name';
@@ -16,6 +16,17 @@ class AppConstants {
   static const String keyModelPath = 'model_path';
   static const String keyModelIsAsset = 'model_is_asset';
   static const String keyCompanionName = 'companion_name';
+
+  // Settings keys — NVIDIA NIM
+  static const String keyNvidiaApiKey           = 'nvidia_api_key';
+  static const String keyNvidiaModel            = 'nvidia_model';
+  static const String keyNvidiaLiveMode         = 'nvidia_live_mode';
+  static const String keyNvidiaVisionEnabled    = 'nvidia_vision_enabled';
+  static const String keyNvidiaVoiceId          = 'nvidia_voice_id';
+  static const String keyNvidiaClonedVoiceId    = 'nvidia_cloned_voice_id';
+  static const String keyNvidiaClonedVoiceName  = 'nvidia_cloned_voice_name';
+  static const String keyNvidiaCustomPresets     = 'nvidia_custom_presets';
+  static const String keyActiveProvider         = 'active_provider'; // 'openai' | 'nvidia'
 
   // Default values
   static const String defaultCompanionName = 'Chomu';
