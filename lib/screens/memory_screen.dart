@@ -268,7 +268,7 @@ class _FactCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    fmt.format(fact.createdDate),
+                    fmt.format(DateTime.fromMillisecondsSinceEpoch(fact.createdAt)),
                     style: const TextStyle(
                       color: AppTheme.textMuted,
                       fontSize: 11,

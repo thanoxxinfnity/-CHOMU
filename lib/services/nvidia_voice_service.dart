@@ -17,14 +17,20 @@ class NvidiaVoiceService {
   // These map to NVIDIA PlayAI TTS speaker IDs.
   // Display name → voice_id value sent to the API.
   static const Map<String, NvidiaVoicePreset> builtinPresets = {
-    'Aria (Female, Warm)':   NvidiaVoicePreset(id: 'aria',    gender: 'female', style: 'warm'),
-    'Atlas (Male, Deep)':    NvidiaVoicePreset(id: 'atlas',   gender: 'male',   style: 'deep'),
-    'Elara (Female, Soft)':  NvidiaVoicePreset(id: 'elara',   gender: 'female', style: 'soft'),
-    'Orion (Male, Clear)':   NvidiaVoicePreset(id: 'orion',   gender: 'male',   style: 'clear'),
-    'Nova (Female, Bright)': NvidiaVoicePreset(id: 'nova',    gender: 'female', style: 'bright'),
-    'Rex (Male, Casual)':    NvidiaVoicePreset(id: 'rex',     gender: 'male',   style: 'casual'),
-    'Luna (Female, Calm)':   NvidiaVoicePreset(id: 'luna',    gender: 'female', style: 'calm'),
-    'Zephyr (NB, Airy)':     NvidiaVoicePreset(id: 'zephyr',  gender: 'neutral',style: 'airy'),
+    // International voices
+    'Aria (Female, Warm)':       NvidiaVoicePreset(id: 'aria',    gender: 'female', style: 'warm'),
+    'Atlas (Male, Deep)':        NvidiaVoicePreset(id: 'atlas',   gender: 'male',   style: 'deep'),
+    'Elara (Female, Soft)':      NvidiaVoicePreset(id: 'elara',   gender: 'female', style: 'soft'),
+    'Orion (Male, Clear)':       NvidiaVoicePreset(id: 'orion',   gender: 'male',   style: 'clear'),
+    'Nova (Female, Bright)':     NvidiaVoicePreset(id: 'nova',    gender: 'female', style: 'bright'),
+    'Rex (Male, Casual)':        NvidiaVoicePreset(id: 'rex',     gender: 'male',   style: 'casual'),
+    'Luna (Female, Calm)':       NvidiaVoicePreset(id: 'luna',    gender: 'female', style: 'calm'),
+    'Zephyr (NB, Airy)':         NvidiaVoicePreset(id: 'zephyr',  gender: 'neutral',style: 'airy'),
+    // Indian accent voices
+    'Priya (Female, Indian)':    NvidiaVoicePreset(id: 'priya',   gender: 'female', style: 'indian'),
+    'Arjun (Male, Indian)':      NvidiaVoicePreset(id: 'arjun',   gender: 'male',   style: 'indian'),
+    'Ananya (Female, Hindi)':    NvidiaVoicePreset(id: 'ananya',  gender: 'female', style: 'hindi'),
+    'Rohan (Male, Hindi)':       NvidiaVoicePreset(id: 'rohan',   gender: 'male',   style: 'hindi'),
   };
 
   final DatabaseService _db = DatabaseService();
