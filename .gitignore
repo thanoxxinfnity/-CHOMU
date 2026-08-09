@@ -1,0 +1,26 @@
+# Flutter
+.dart_tool/
+.packages
+pubspec.lock
+build/
+*.g.dart.bak
+
+# Android
+android/.gradle/
+android/local.properties
+android/key.properties
+*.jks
+*.keystore
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — never commit
+*.env
+secrets/

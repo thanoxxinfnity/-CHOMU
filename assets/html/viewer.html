@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CHOMU Companion Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  #canvas-container { width: 100%; height: 100%; position: relative; }
+  canvas { display: block; width: 100% !important; height: 100% !important; }
+  #status {
+    position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-family: monospace; font-size: 11px;
+    pointer-events: none; user-select: none;
+  }
+  #loading-overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 80%, rgba(124,107,248,0.15) 0%, transparent 70%);
+    transition: opacity 0.5s ease;
+  }
+  .spinner {
+    width: 40px; height: 40px; border: 2px solid rgba(124,107,248,0.3);
+    border-top-color: #7C6BF8; border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  .loading-text { color: rgba(255,255,255,0.6); margin-top: 12px; font-family: monospace; font-size: 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="canvas-container">
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loading-text">Loading Three.js…</div>
+  </div>
+  <div id="status"></div>
+</div>
+
+<!-- Three.js r158 inline CDN (bundled script tag for network access) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/DRACOLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@2.1.3/lib/three-vrm.min.js"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  CHOMU 3D Companion Viewer  –  Three.js + @pixiv/three-vrm
+// ═══════════════════════════════════════════════════════════════════
+'use strict';
+
+const Status = document.getElementById('status');
+const LoadingOverlay = document.getElementById('loading-overlay');
+const LoadingText = document.getElementById('loading-text');
+
+function log(msg) {
+  Status.textContent = msg;
+  // Send to Flutter
+  if (window.flutter_inappwebview) {
+    window.flutter_inappwebview.callHandler('onStatus', msg);
+  }
+}
+
+// ─── Scene Setup ──────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  alpha: true,
+  powerPreference: 'high-performance',
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = null; // Transparent
+
+const camera = new THREE.PerspectiveCamera(
+  30, window.innerWidth / window.innerHeight, 0.1, 20
+);
+camera.position.set(0, 1.4, 3.2);
+camera.lookAt(0, 1.3, 0);
+
+// ─── Lighting ─────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffeeff, 1.2);
+dirLight.position.set(1, 3, 2);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 1024;
+dirLight.shadow.mapSize.height = 1024;
+scene.add(dirLight);
+
+const rimLight = new THREE.DirectionalLight(0x88aaff, 0.4);
+rimLight.position.set(-2, 1, -1);
+scene.add(rimLight);
+
+const fillLight = new THREE.PointLight(0x7C6BF8, 0.3, 8);
+fillLight.position.set(0, 0.5, 2);
+scene.add(fillLight);
+
+// ─── Ground plane (subtle reflection) ────────────────────────────
+const groundGeo = new THREE.PlaneGeometry(4, 4);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x101018,
+  roughness: 0.8,
+  metalness: 0.1,
+  transparent: true,
+  opacity: 0.3,
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = 0;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ─── VRM / GLB State ──────────────────────────────────────────────
+let vrm = null;
+let mixer = null;
+let currentModel = null;
+let isVRM = false;
+
+// ─── Procedural Animation State ───────────────────────────────────
+const clock = new THREE.Clock();
+let breathPhase = 0;
+let blinkTimer = 0;
+let blinkTarget = 0;
+let blinkCurrent = 0;
+let nextBlinkTime = 2 + Math.random() * 3;
+
+// Head tracking
+const headTarget = new THREE.Vector2(0, 0);
+const headCurrent = new THREE.Vector2(0, 0);
+
+// Emotion blendshape weights (target)
+const emotionTargets = {};
+const emotionCurrent = {};
+
+// Viseme weights
+const visemeTargets = {};
+const visemeCurrent = {};
+
+// Motion state
+let currentMotion = 'idle';
+let motionTimer = 0;
+let motionPhase = 0;
+
+// ─── GLTF / VRM Loader ────────────────────────────────────────────
+const loader = new THREE.GLTFLoader();
+
+// Try to set up DRACO decoder
+try {
+  const dracoLoader = new THREE.DRACOLoader();
+  dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+  loader.setDRACOLoader(dracoLoader);
+} catch(e) {}
+
+// Register VRM plugin if available
+if (window.THREE_VRM && window.THREE_VRM.VRMLoaderPlugin) {
+  loader.register(parser => new window.THREE_VRM.VRMLoaderPlugin(parser));
+}
+
+function loadModelFromURL(url, isAsset) {
+  LoadingOverlay.style.opacity = '1';
+  LoadingOverlay.style.pointerEvents = 'all';
+  LoadingText.textContent = 'Loading model…';
+
+  // Clear existing model
+  if (currentModel) {
+    scene.remove(currentModel);
+    currentModel = null;
+    vrm = null;
+    mixer = null;
+  }
+
+  loader.load(
+    url,
+    (gltf) => {
+      // Check for VRM
+      if (gltf.userData.vrm) {
+        vrm = gltf.userData.vrm;
+        isVRM = true;
+        window.THREE_VRM && window.THREE_VRM.VRMUtils &&
+          window.THREE_VRM.VRMUtils.rotateVRM0(vrm);
+        currentModel = vrm.scene;
+        log('VRM loaded');
+      } else {
+        isVRM = false;
+        currentModel = gltf.scene;
+        log('GLB loaded');
+      }
+
+      // Auto-scale and center
+      const box = new THREE.Box3().setFromObject(currentModel);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const scale = 1.8 / maxDim;
+      currentModel.scale.setScalar(scale);
+      currentModel.position.sub(center.multiplyScalar(scale));
+      currentModel.position.y = 0;
+
+      // Enable shadows
+      currentModel.traverse(child => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      // Setup mixer for embedded animations
+      if (gltf.animations && gltf.animations.length > 0) {
+        mixer = new THREE.AnimationMixer(currentModel);
+        // Play first idle animation if exists
+        const idleClip = gltf.animations.find(a =>
+          a.name.toLowerCase().includes('idle') || a.name.toLowerCase().includes('breathe')
+        );
+        if (idleClip) {
+          mixer.clipAction(idleClip).play();
+        }
+      }
+
+      scene.add(currentModel);
+
+      // Fade out loading overlay
+      LoadingOverlay.style.opacity = '0';
+      LoadingOverlay.style.pointerEvents = 'none';
+
+      // Notify Flutter
+      if (window.flutter_inappwebview) {
+        window.flutter_inappwebview.callHandler('onModelLoaded', {
+          isVRM: isVRM,
+          hasAnimations: (gltf.animations || []).length > 0,
+        });
+      }
+    },
+    (progress) => {
+      if (progress.total > 0) {
+        const pct = Math.round(progress.loaded / progress.total * 100);
+        LoadingText.textContent = `Loading… ${pct}%`;
+      }
+    },
+    (error) => {
+      log('Load error: ' + error.message);
+      LoadingText.textContent = 'Error loading model';
+      if (window.flutter_inappwebview) {
+        window.flutter_inappwebview.callHandler('onModelError', error.message || 'Unknown error');
+      }
+    }
+  );
+}
+
+// ─── Blendshape / Expression Helpers ─────────────────────────────
+function setExpressionVRM(name, weight) {
+  if (!vrm || !vrm.expressionManager) return;
+  try { vrm.expressionManager.setValue(name, weight); } catch(_) {}
+}
+
+function setMorphTarget(name, weight) {
+  if (!currentModel) return;
+  currentModel.traverse(child => {
+    if (!child.isMesh || !child.morphTargetDictionary) return;
+    const idx = child.morphTargetDictionary[name] ??
+                child.morphTargetDictionary[name.toLowerCase()] ??
+                child.morphTargetDictionary[name.toUpperCase()];
+    if (idx !== undefined && child.morphTargetInfluences) {
+      child.morphTargetInfluences[idx] = Math.max(0, Math.min(1, weight));
+    }
+  });
+}
+
+function setExpression(name, weight) {
+  if (isVRM) {
+    setExpressionVRM(name, weight);
+  } else {
+    setMorphTarget(name, weight);
+  }
+}
+
+// ─── Emotion → Blendshapes ────────────────────────────────────────
+const EMOTION_MAPS = {
+  happy:     { happy: 1.0 },
+  sad:       { sad: 1.0 },
+  surprised: { surprised: 1.0 },
+  angry:     { angry: 0.7 },
+  excited:   { happy: 0.8, surprised: 0.4 },
+  thinking:  { relaxed: 0.3 },
+  shy:       { happy: 0.4, relaxed: 0.3 },
+  neutral:   {},
+};
+
+let currentEmotionMap = {};
+let targetEmotionMap = {};
+
+function applyEmotion(emotionName) {
+  targetEmotionMap = EMOTION_MAPS[emotionName] || {};
+}
+
+// ─── Motion Execution ─────────────────────────────────────────────
+const MOTIONS = {
+  idle:              () => {},
+  head_nod:          (t) => ({ headY: Math.sin(t * Math.PI * 2) * 0.25 }),
+  head_shake:        (t) => ({ headX: Math.sin(t * Math.PI * 3) * 0.25 }),
+  wave_hand:         (t) => ({ armR: Math.sin(t * Math.PI * 4) * 0.5 }),
+  point:             (t) => ({ armR: 0.3, armRZ: Math.sin(t * Math.PI) * 0.1 }),
+  thinking_pose:     (t) => ({ headX: -0.1, headY: 0.1, armL: 0.2 }),
+  excited_bounce:    (t) => ({ bodyY: Math.abs(Math.sin(t * Math.PI * 3)) * 0.04 }),
+  expressive_gesture:(t) => ({ armR: Math.sin(t * Math.PI * 2) * 0.3, armL: Math.cos(t * Math.PI * 2) * 0.2 }),
+};
+
+let motionDuration = 2.0;
+let motionActive = false;
+
+function triggerMotion(motionName) {
+  currentMotion = motionName;
+  motionTimer = 0;
+  motionPhase = 0;
+  motionActive = (motionName !== 'idle');
+}
+
+// ─── Bone Helpers ─────────────────────────────────────────────────
+function getBone(name) {
+  if (!currentModel) return null;
+  let found = null;
+  currentModel.traverse(obj => {
+    if (found) return;
+    const n = obj.name.toLowerCase();
+    if (n.includes(name.toLowerCase())) found = obj;
+  });
+  return found;
+}
+
+function lerpQuaternion(bone, targetEuler, alpha) {
+  if (!bone) return;
+  const target = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(targetEuler.x || 0, targetEuler.y || 0, targetEuler.z || 0)
+  );
+  bone.quaternion.slerp(target, alpha);
+}
+
+// ─── Main Animation Loop ──────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  const elapsed = clock.getElapsedTime();
+
+  if (!currentModel) {
+    renderer.render(scene, camera);
+    return;
+  }
+
+  // Update VRM
+  if (vrm) vrm.update(delta);
+  if (mixer) mixer.update(delta);
+
+  // ── Breathing ──────────────────────────────────────────────────
+  breathPhase += delta * 0.4; // ~2.5s period
+  const breathAmt = Math.sin(breathPhase) * 0.5 + 0.5; // 0–1
+
+  // Chest/spine bone subtle movement
+  const spineBone = getBone('spine') || getBone('chest') || getBone('upper_chest');
+  if (spineBone) {
+    spineBone.rotation.z = Math.sin(breathPhase) * 0.008;
+    spineBone.position.y += Math.sin(breathPhase) * 0.001 * delta * 60;
+  }
+
+  // VRM breathing expression
+  if (isVRM && vrm.expressionManager) {
+    try { vrm.expressionManager.setValue('relaxed', breathAmt * 0.15); } catch(_) {}
+  }
+
+  // ── Blinking ───────────────────────────────────────────────────
+  blinkTimer += delta;
+  if (blinkTimer >= nextBlinkTime) {
+    blinkTarget = 1.0;
+    blinkTimer = 0;
+    nextBlinkTime = 2.0 + Math.random() * 4.0;
+    setTimeout(() => { blinkTarget = 0.0; }, 120);
+  }
+  blinkCurrent += (blinkTarget - blinkCurrent) * Math.min(1, delta * 25);
+
+  if (isVRM && vrm.expressionManager) {
+    try {
+      vrm.expressionManager.setValue('blink', blinkCurrent);
+    } catch(_) {
+      setMorphTarget('blink', blinkCurrent);
+    }
+  } else {
+    setMorphTarget('blink', blinkCurrent);
+    setMorphTarget('eyeBlinkLeft', blinkCurrent);
+    setMorphTarget('eyeBlinkRight', blinkCurrent);
+  }
+
+  // ── Head Tracking ──────────────────────────────────────────────
+  headCurrent.lerp(headTarget, delta * 4);
+  const headBone = getBone('head') || getBone('neck');
+  if (headBone) {
+    headBone.rotation.y += (headCurrent.x * 0.4 - headBone.rotation.y) * delta * 5;
+    headBone.rotation.x += (headCurrent.y * 0.2 - headBone.rotation.x) * delta * 5;
+  }
+
+  // ── Emotion Lerp ───────────────────────────────────────────────
+  const allEmotions = new Set([
+    ...Object.keys(currentEmotionMap),
+    ...Object.keys(targetEmotionMap)
+  ]);
+  allEmotions.forEach(emo => {
+    const target = targetEmotionMap[emo] || 0;
+    currentEmotionMap[emo] = (currentEmotionMap[emo] || 0);
+    currentEmotionMap[emo] += (target - currentEmotionMap[emo]) * delta * 3;
+    if (Math.abs(currentEmotionMap[emo]) < 0.001) currentEmotionMap[emo] = 0;
+    setExpression(emo, currentEmotionMap[emo]);
+  });
+
+  // ── Viseme Lerp ────────────────────────────────────────────────
+  Object.keys(visemeTargets).forEach(vis => {
+    visemeCurrent[vis] = (visemeCurrent[vis] || 0);
+    visemeCurrent[vis] += (visemeTargets[vis] - visemeCurrent[vis]) * delta * 20;
+    setExpression(vis, visemeCurrent[vis]);
+  });
+
+  // ── Motion Execution ───────────────────────────────────────────
+  if (motionActive) {
+    motionTimer += delta;
+    const t = motionTimer / motionDuration;
+    if (t >= 1.0) {
+      motionActive = false;
+      currentMotion = 'idle';
+    } else {
+      const motionFn = MOTIONS[currentMotion];
+      if (motionFn && typeof motionFn === 'function') {
+        const transforms = motionFn(t) || {};
+
+        if (transforms.headX !== undefined || transforms.headY !== undefined) {
+          const hBone = getBone('head');
+          if (hBone) {
+            if (transforms.headX !== undefined)
+              hBone.rotation.x += (transforms.headX - hBone.rotation.x) * delta * 8;
+            if (transforms.headY !== undefined)
+              hBone.rotation.y += (transforms.headY - hBone.rotation.y) * delta * 8;
+          }
+        }
+
+        if (transforms.bodyY !== undefined && currentModel) {
+          currentModel.position.y += (transforms.bodyY - currentModel.position.y) * delta * 8;
+        }
+
+        const rightArm = getBone('rightarm') || getBone('right_arm') || getBone('upperarm_r');
+        if (rightArm && transforms.armR !== undefined) {
+          rightArm.rotation.z += (transforms.armR - rightArm.rotation.z) * delta * 6;
+        }
+        const leftArm = getBone('leftarm') || getBone('left_arm') || getBone('upperarm_l');
+        if (leftArm && transforms.armL !== undefined) {
+          leftArm.rotation.z += (-transforms.armL - leftArm.rotation.z) * delta * 6;
+        }
+      }
+    }
+  }
+
+  // ── Subtle idle sway (always) ──────────────────────────────────
+  if (currentModel && !motionActive) {
+    currentModel.rotation.y = Math.sin(elapsed * 0.3) * 0.02;
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ─── Window Resize ────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Touch → Head Tracking ────────────────────────────────────────
+document.addEventListener('touchmove', e => {
+  if (e.touches.length === 0) return;
+  const t = e.touches[0];
+  const nx = (t.clientX / window.innerWidth) * 2 - 1;  // -1..1
+  const ny = -((t.clientY / window.innerHeight) * 2 - 1); // -1..1
+  headTarget.set(nx, ny * 0.3);
+  if (window.flutter_inappwebview) {
+    window.flutter_inappwebview.callHandler('onHeadTarget', { x: nx, y: ny });
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', () => {
+  headTarget.set(0, 0);
+}, { passive: true });
+
+// ─── Flutter JavaScript Bridge ────────────────────────────────────
+window.CompanionBridge = {
+
+  loadModel: function(url) {
+    loadModelFromURL(url, false);
+  },
+
+  loadAsset: function(assetUrl) {
+    loadModelFromURL(assetUrl, true);
+  },
+
+  setEmotion: function(emotionName) {
+    applyEmotion(emotionName);
+  },
+
+  setMotion: function(motionName) {
+    triggerMotion(motionName);
+  },
+
+  setVisemes: function(weightsJson) {
+    try {
+      const weights = JSON.parse(weightsJson);
+      Object.assign(visemeTargets, weights);
+    } catch(e) {}
+  },
+
+  triggerBlink: function() {
+    blinkTarget = 1.0;
+    setTimeout(() => { blinkTarget = 0.0; }, 120);
+  },
+
+  setHeadTarget: function(x, y) {
+    headTarget.set(parseFloat(x), parseFloat(y));
+  },
+
+  setBreathPhase: function(phase) {
+    // Optionally override breath phase from Flutter
+    breathPhase = parseFloat(phase);
+  },
+
+  getStatus: function() {
+    return JSON.stringify({
+      modelLoaded: !!currentModel,
+      isVRM: isVRM,
+      currentEmotion: Object.keys(currentEmotionMap).filter(k => currentEmotionMap[k] > 0.1),
+      currentMotion: currentMotion,
+    });
+  },
+};
+
+// ─── Start ────────────────────────────────────────────────────────
+animate();
+log('Ready');
+
+// Load default model (asset:///assets/models/default_companion.glb)
+// Flutter will call loadModel() via the bridge after WebView is ready.
+LoadingText.textContent = 'Waiting for model…';
+
+// Notify Flutter the viewer is ready
+setTimeout(() => {
+  if (window.flutter_inappwebview) {
+    window.flutter_inappwebview.callHandler('onViewerReady', true);
+  }
+}, 200);
+</script>
+</body>
+</html>
