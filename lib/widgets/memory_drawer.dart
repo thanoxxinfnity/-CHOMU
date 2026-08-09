@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -18,39 +17,36 @@ class SessionDrawer extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: const BorderRadius.horizontal(right: Radius.circular(24)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.82,
-          color: AppTheme.surface.withOpacity(0.85),
-          child: Column(
-            children: [
-              _DrawerHeader(
-                onNewChat: () {
-                  Navigator.pop(context);
-                  chat.newSession();
-                },
-              ),
-              Expanded(
-                child: sessions.isEmpty
-                    ? _EmptyState()
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        itemCount: sessions.length,
-                        itemBuilder: (ctx, i) => _SessionTile(
-                          session: sessions[i],
-                          isActive: sessions[i].id == chat.currentSession?.id,
-                          onTap: () {
-                            chat.loadSession(sessions[i].id);
-                            Navigator.pop(context);
-                          },
-                          onDelete: () => chat.deleteSession(sessions[i].id),
-                        ),
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.82,
+        color: Colors.black.withOpacity(0.92),
+        child: Column(
+          children: [
+            _DrawerHeader(
+              onNewChat: () {
+                Navigator.pop(context);
+                chat.newSession();
+              },
+            ),
+            Expanded(
+              child: sessions.isEmpty
+                  ? _EmptyState()
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      itemCount: sessions.length,
+                      itemBuilder: (ctx, i) => _SessionTile(
+                        session: sessions[i],
+                        isActive: sessions[i].id == chat.currentSession?.id,
+                        onTap: () {
+                          chat.loadSession(sessions[i].id);
+                          Navigator.pop(context);
+                        },
+                        onDelete: () => chat.deleteSession(sessions[i].id),
                       ),
-              ),
-            ],
-          ),
+                    ),
+            ),
+          ],
         ),
       ),
     );

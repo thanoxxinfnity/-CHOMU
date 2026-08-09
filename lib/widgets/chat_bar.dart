@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
@@ -51,28 +50,24 @@ class _ChatBarState extends State<ChatBar> {
         right: 16,
         bottom: MediaQuery.of(context).viewInsets.bottom + 16,
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppTheme.glassBg,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: AppTheme.glassBorder),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
-                  blurRadius: 20,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.82),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: AppTheme.glassBorder),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
                   // Live-mode streaming progress
                   if (chat.isStreaming)
                     Padding(
@@ -174,8 +169,6 @@ class _ChatBarState extends State<ChatBar> {
                 ],
               ),
             ),
-          ),
-        ),
       ).animate().slideY(begin: 1, duration: 400.ms, curve: Curves.easeOutBack),
     );
   }

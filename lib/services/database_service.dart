@@ -149,4 +149,12 @@ class DatabaseService {
     await _sessionsBox.clear();
     await _memoryBox.clear();
   }
+
+  Future<void> resetAndInitialize() async {
+    try { await Hive.deleteBoxFromDisk(AppConstants.hiveBoxSessions); } catch (_) {}
+    try { await Hive.deleteBoxFromDisk('chat_sessions'); } catch (_) {}
+    try { await Hive.deleteBoxFromDisk(AppConstants.hiveBoxMemory); } catch (_) {}
+    try { await Hive.deleteBoxFromDisk(AppConstants.hiveBoxSettings); } catch (_) {}
+    await initialize();
+  }
 }

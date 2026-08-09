@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme.dart';
@@ -97,59 +96,55 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: AppTheme.glassCard(
-            borderRadius: BorderRadius.circular(20),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.72),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppTheme.glassBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: _stateColor,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: _stateColor.withOpacity(0.6),
+                  blurRadius: 6,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
           ),
-          child: Row(
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: _stateColor,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: _stateColor.withOpacity(0.6),
-                      blurRadius: 6,
-                      spreadRadius: 1,
-                    ),
-                  ],
+              Text(
+                name,
+                style: const TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    name,
-                    style: const TextStyle(
-                      color: AppTheme.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    _stateLabel,
-                    style: TextStyle(
-                      color: _stateColor,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
+              Text(
+                _stateLabel,
+                style: TextStyle(
+                  color: _stateColor,
+                  fontSize: 10,
+                ),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -172,18 +167,15 @@ class _TopBarButton extends StatelessWidget {
       message: tooltip,
       child: GestureDetector(
         onTap: onTap,
-        child: ClipOval(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: AppTheme.glassCard(
-                borderRadius: BorderRadius.circular(21),
-              ),
-              child: Icon(icon, color: AppTheme.textSecondary, size: 20),
-            ),
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.72),
+            shape: BoxShape.circle,
+            border: Border.all(color: AppTheme.glassBorder),
           ),
+          child: Icon(icon, color: AppTheme.textSecondary, size: 20),
         ),
       ),
     );

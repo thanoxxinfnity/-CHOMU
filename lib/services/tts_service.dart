@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
@@ -24,25 +25,29 @@ class TtsService {
 
   Future<void> initialize() async {
     if (_isInitialized) return;
-    await _flutterTts.setLanguage('en-US');
-    await _flutterTts.setSpeechRate(0.9);
-    await _flutterTts.setVolume(1.0);
-    await _flutterTts.setPitch(1.1);
-    _flutterTts.setStartHandler(() => _isSpeaking = true);
-    _flutterTts.setCompletionHandler(() {
-      _isSpeaking = false;
-      onComplete?.call();
-    });
-    _flutterTts.setErrorHandler((_) {
-      _isSpeaking = false;
-      onComplete?.call();
-    });
-    _audioPlayer.onPlayerStateChanged.listen((s) {
-      if (s == PlayerState.completed) {
+    try {
+      await _flutterTts.setLanguage('en-US');
+      await _flutterTts.setSpeechRate(0.9);
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.setPitch(1.1);
+      _flutterTts.setStartHandler(() => _isSpeaking = true);
+      _flutterTts.setCompletionHandler(() {
         _isSpeaking = false;
         onComplete?.call();
-      }
-    });
+      });
+      _flutterTts.setErrorHandler((_) {
+        _isSpeaking = false;
+        onComplete?.call();
+      });
+      _audioPlayer.onPlayerStateChanged.listen((s) {
+        if (s == PlayerState.completed) {
+          _isSpeaking = false;
+          onComplete?.call();
+        }
+      });
+    } catch (e) {
+      debugPrint('[TTS] init error (will use device fallback): $e');
+    }
     _isInitialized = true;
   }
 

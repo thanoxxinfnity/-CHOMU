@@ -47,8 +47,16 @@ class ChatProvider extends ChangeNotifier {
 
   Future<void> initialize(CompanionProvider companion) async {
     _companion = companion;
-    await _tts.initialize();
-    await _audio.initialize();
+    try {
+      await _tts.initialize();
+    } catch (e) {
+      debugPrint('[Chat] TTS init failed: $e');
+    }
+    try {
+      await _audio.initialize();
+    } catch (e) {
+      debugPrint('[Chat] Audio init failed: $e');
+    }
 
     _viseme = VisemeService(
       onWeightsUpdate: (weights) => companion.updateVisemes(weights),
@@ -59,7 +67,11 @@ class ChatProvider extends ChangeNotifier {
       _companion?.setState(CompanionState.idle);
     };
 
-    await _startOrResumeSession();
+    try {
+      await _startOrResumeSession();
+    } catch (e) {
+      debugPrint('[Chat] Session init failed: $e');
+    }
   }
 
   Future<void> _startOrResumeSession() async {
