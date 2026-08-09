@@ -9,7 +9,7 @@ import '../widgets/companion_viewer.dart';
 import '../widgets/chat_bar.dart';
 import '../widgets/top_action_bar.dart';
 import '../widgets/memory_drawer.dart';
-import 'dart:ui';
+// dart:ui only used for ImageFilter
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -92,8 +92,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Positioned(
             top: 72,
             left: 16,
-            child: _HistoryToggle(
+            child: _SimpleIconButton(
+              icon: Icons.menu_rounded,
               onTap: () => _scaffoldKey.currentState?.openDrawer(),
+            ),
+          ),
+
+          // Camera toggle
+          Positioned(
+            top: 72,
+            right: 16,
+            child: _CameraToggle(
+              onTap: () {
+                final companion = context.read<CompanionProvider>();
+                if (companion.cameraOpen) companion.closeCamera();
+                else companion.openCamera();
+              },
             ),
           ),
 
@@ -111,9 +125,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Positioned(
             bottom: 100,
             right: 16,
-            child: _BubbleToggle(
-              isShowing: _showMessages,
+            child: _SimpleIconButton(
+              icon: _showMessages ? Icons.chat_rounded : Icons.chat_bubble_outline_rounded,
               onTap: () => setState(() => _showMessages = !_showMessages),
+              active: _showMessages,
             ),
           ),
 
@@ -130,66 +145,63 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 }
 
-class _HistoryToggle extends StatelessWidget {
+class _SimpleIconButton extends StatelessWidget {
+  final IconData icon;
   final VoidCallback onTap;
-  const _HistoryToggle({required this.onTap});
+  final bool active;
+  const _SimpleIconButton({required this.icon, required this.onTap, this.active = false});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: ClipOval(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            width: 38,
-            height: 38,
-            decoration: AppTheme.glassCard(borderRadius: BorderRadius.circular(19)),
-            child: const Icon(
-              Icons.menu_rounded,
-              color: AppTheme.textSecondary,
-              size: 18,
-            ),
+      child: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(
+          color: active
+              ? AppTheme.accentPrimary.withOpacity(0.25)
+              : Colors.black.withOpacity(0.55),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: active
+                ? AppTheme.accentPrimary.withOpacity(0.5)
+                : Colors.white.withOpacity(0.15),
           ),
         ),
+        child: Icon(icon,
+          color: active ? AppTheme.accentPrimary : Colors.white70,
+          size: 18),
       ),
     );
   }
 }
 
-class _BubbleToggle extends StatelessWidget {
-  final bool isShowing;
+class _CameraToggle extends StatelessWidget {
   final VoidCallback onTap;
-  const _BubbleToggle({required this.isShowing, required this.onTap});
+  const _CameraToggle({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final companion = context.watch<CompanionProvider>();
     return GestureDetector(
       onTap: onTap,
-      child: ClipOval(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: isShowing
-                  ? AppTheme.accentPrimary.withOpacity(0.2)
-                  : AppTheme.glassBg,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isShowing
-                    ? AppTheme.accentPrimary.withOpacity(0.4)
-                    : AppTheme.glassBorder,
-              ),
-            ),
-            child: Icon(
-              isShowing ? Icons.chat_rounded : Icons.chat_bubble_outline_rounded,
-              color: isShowing ? AppTheme.accentPrimary : AppTheme.textSecondary,
-              size: 18,
-            ),
+      child: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(
+          color: companion.cameraOpen
+              ? Colors.redAccent.withOpacity(0.3)
+              : Colors.black.withOpacity(0.55),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: companion.cameraOpen
+                ? Colors.redAccent.withOpacity(0.6)
+                : Colors.white.withOpacity(0.15),
           ),
+        ),
+        child: Icon(
+          companion.cameraOpen ? Icons.videocam_off_rounded : Icons.videocam_rounded,
+          color: companion.cameraOpen ? Colors.redAccent : Colors.white70,
+          size: 18,
         ),
       ),
     );
@@ -204,22 +216,20 @@ class _MessagesOverlay extends StatelessWidget {
 
     if (messages.isEmpty) return const SizedBox.shrink();
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          decoration: AppTheme.glassCard(),
-          child: ListView.builder(
-            padding: const EdgeInsets.all(12),
-            reverse: true,
-            itemCount: messages.length,
-            itemBuilder: (ctx, i) {
-              final msg = messages[messages.length - 1 - i];
-              return _MessageBubble(message: msg);
-            },
-          ),
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.75),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        reverse: true,
+        itemCount: messages.length,
+        itemBuilder: (ctx, i) {
+          final msg = messages[messages.length - 1 - i];
+          return _MessageBubble(message: msg);
+        },
       ),
     );
   }

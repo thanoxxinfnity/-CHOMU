@@ -213,6 +213,75 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
+  // ── Camera Vision ─────────────────────────────────────────────────────────
+
+  Future<void> sendCameraFrame(String base64Jpeg) async {
+    if (_isLoading || _isStreaming) return;
+    _isLoading = true;
+    _companion?.setState(CompanionState.thinking);
+    notifyListeners();
+
+    try {
+      final companionName = _db.getSetting(
+        AppConstants.keyCompanionName,
+        defaultValue: AppConstants.defaultCompanionName,
+      ) as String;
+
+      final systemPrompt = 'You are $companionName, a caring AI companion. '
+          'The user just showed you their camera. Look at the image carefully and '
+          'respond warmly and naturally in a conversational way. Be observant, '
+          'playful, and engage with what you see. Keep your response under 80 words. '
+          'Respond in JSON: {"dialogue":"...", "emotion":"happy|sad|surprised|excited|neutral|thinking", "motion":"head_nod|wave_hand|idle"}';
+
+      AiResponse response;
+      if (_nvidia.isConfigured) {
+        response = await _nvidia.chatWithImage(
+          systemPrompt: systemPrompt,
+          userText: 'What do you see? Tell me about it!',
+          imageBase64: base64Jpeg,
+          mimeType: 'image/jpeg',
+        );
+      } else {
+        response = AiResponse(
+          dialogue: 'Oh wow, I can see you! But I need an NVIDIA API key in Settings to really analyze what\'s in front of the camera.',
+          emotion: 'surprised',
+          motionType: 'head_nod',
+        );
+      }
+
+      final userMsg = Message(
+        sessionId: _currentSession!.id,
+        role: 'user',
+        content: '[Camera image shared]',
+      );
+      await _db.saveMessage(userMsg);
+      _messages.add(userMsg);
+
+      final aiMsg = Message(
+        sessionId: _currentSession!.id,
+        role: 'assistant',
+        content: response.dialogue,
+        emotion: response.emotion,
+        motionType: response.motionType,
+      );
+      await _db.saveMessage(aiMsg);
+      _messages.add(aiMsg);
+      _companion?.applyAiResponse(response);
+      _companion?.setState(CompanionState.speaking);
+      _companion?.setCameraStatus('AI responded ✓');
+
+      _isLoading = false;
+      notifyListeners();
+
+      await _tts.speak(response.dialogue);
+    } catch (e) {
+      _isLoading = false;
+      _companion?.setState(CompanionState.idle);
+      _companion?.setCameraStatus('Error: $e');
+      notifyListeners();
+    }
+  }
+
   // ── Microphone ────────────────────────────────────────────────────────────
 
   Future<bool> startListening() async {

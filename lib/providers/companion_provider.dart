@@ -33,6 +33,12 @@ class CompanionProvider extends ChangeNotifier {
   Function(bool blink)? onBlinkUpdate;
   Function(double x, double y)? onHeadTarget;
   Function(String path, bool isAsset)? onLoadModel;
+  Function()? onOpenCamera;
+  Function()? onCloseCamera;
+  Function(String msg)? onCameraStatus;
+
+  bool _cameraOpen = false;
+  bool get cameraOpen => _cameraOpen;
 
   CompanionState get state => _state;
   String get currentEmotion => _currentEmotion;
@@ -125,6 +131,22 @@ class CompanionProvider extends ChangeNotifier {
   }
 
   void triggerManualBlink() => _triggerBlink();
+
+  void openCamera() {
+    _cameraOpen = true;
+    onOpenCamera?.call();
+    notifyListeners();
+  }
+
+  void closeCamera() {
+    _cameraOpen = false;
+    onCloseCamera?.call();
+    notifyListeners();
+  }
+
+  void setCameraStatus(String msg) {
+    onCameraStatus?.call(msg);
+  }
 
   @override
   void dispose() {

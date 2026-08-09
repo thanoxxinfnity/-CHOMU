@@ -103,17 +103,18 @@ class AudioService {
   void _startAmplitudeTracking() {
     _amplitudeTimer?.cancel();
     _amplitudeTimer = Timer.periodic(
-      const Duration(milliseconds: 33), // ~30 fps
+      const Duration(milliseconds: 50), // ~20 fps - lighter on CPU
       (_) async {
         double rms = 0.0;
-        if (_isRecording) {
-          final amp = await _recorder.getAmplitude();
-          // Convert dBFS to linear 0-1
-          rms = _dbToLinear(amp.current);
-        } else if (_isPlaying) {
-          // Simulate amplitude from player position for lip-sync
-          // (real amplitude requires native audio analysis)
-          rms = _simulatePlaybackAmplitude();
+        try {
+          if (_isRecording) {
+            final amp = await _recorder.getAmplitude();
+            rms = _dbToLinear(amp.current);
+          } else if (_isPlaying) {
+            rms = _simulatePlaybackAmplitude();
+          }
+        } catch (_) {
+          rms = 0.0;
         }
         onAmplitudeUpdate?.call(rms);
         visemeService?.processAmplitude(rms);

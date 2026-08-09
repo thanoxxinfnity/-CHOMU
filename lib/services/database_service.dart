@@ -16,9 +16,11 @@ class DatabaseService {
 
   Future<void> initialize() async {
     await Hive.initFlutter();
-    Hive.registerAdapter(MessageAdapter());
-    Hive.registerAdapter(ChatSessionAdapter());
-    Hive.registerAdapter(MemoryFactAdapter());
+
+    // Ignore double-registration errors (hot restart)
+    try { Hive.registerAdapter(MessageAdapter()); } catch (_) {}
+    try { Hive.registerAdapter(ChatSessionAdapter()); } catch (_) {}
+    try { Hive.registerAdapter(MemoryFactAdapter()); } catch (_) {}
 
     _messagesBox = await Hive.openBox<Message>(AppConstants.hiveBoxSessions);
     _sessionsBox = await Hive.openBox<ChatSession>('chat_sessions');

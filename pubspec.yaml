@@ -30,7 +30,7 @@ dependencies:
   dio: ^5.7.0
 
   # Audio / TTS / STT
-  flutter_tts: ^4.0.2
+  flutter_tts: ^4.2.5
   audioplayers: ^6.1.0
   record: ^5.1.2
   speech_to_text: ^6.6.2
