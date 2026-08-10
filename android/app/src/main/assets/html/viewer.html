@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CHOMU Companion Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  #canvas-container { width: 100%; height: 100%; position: relative; }
+  canvas { display: block; width: 100% !important; height: 100% !important; }
+
+  /* Loading overlay */
+  #loading-overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(10,10,20,0.85);
+    transition: opacity 0.6s ease; z-index: 10;
+  }
+  .spinner {
+    width: 44px; height: 44px; border: 3px solid rgba(124,107,248,0.25);
+    border-top-color: #7C6BF8; border-radius: 50%; animation: spin 0.9s linear infinite;
+  }
+  .loading-text { color: rgba(200,180,255,0.8); margin-top: 14px; font-family: monospace; font-size: 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Camera overlay */
+  #camera-overlay {
+    display: none; position: absolute; inset: 0;
+    background: rgba(0,0,0,0.7); z-index: 20;
+    flex-direction: column; align-items: center; justify-content: center;
+  }
+  #camera-overlay.active { display: flex; }
+  #camera-video {
+    width: 100%; max-width: 320px; border-radius: 16px;
+    border: 2px solid rgba(124,107,248,0.5);
+    transform: scaleX(-1); /* mirror */
+  }
+  #camera-canvas { display: none; }
+  #camera-close {
+    margin-top: 16px; padding: 10px 28px;
+    background: rgba(124,107,248,0.3); color: #fff;
+    border: 1px solid rgba(124,107,248,0.5); border-radius: 24px;
+    font-size: 14px; cursor: pointer;
+  }
+  #camera-analyze {
+    margin-top: 10px; padding: 10px 28px;
+    background: rgba(124,107,248,0.8); color: #fff;
+    border: none; border-radius: 24px;
+    font-size: 14px; cursor: pointer; font-weight: 600;
+  }
+  #camera-status {
+    margin-top: 10px; color: rgba(200,180,255,0.8);
+    font-family: monospace; font-size: 11px; text-align: center;
+  }
+
+  #status {
+    position: absolute; bottom: 10px; left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.3); font-family: monospace; font-size: 10px;
+    pointer-events: none; user-select: none;
+  }
+</style>
+</head>
+<body>
+<div id="canvas-container">
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loading-text">Initializing…</div>
+  </div>
+
+  <!-- Camera overlay -->
+  <div id="camera-overlay">
+    <video id="camera-video" autoplay playsinline muted></video>
+    <canvas id="camera-canvas"></canvas>
+    <button id="camera-analyze">Analyze what you see 👁️</button>
+    <button id="camera-close">Close Camera</button>
+    <div id="camera-status"></div>
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<!-- Bundled locally - no CDN needed -->
+<script src="./three.min.js"></script>
+<script src="./GLTFLoader.js"></script>
+<script src="./three-vrm.min.js"></script>
+
+<script>
+'use strict';
+
+const Status = document.getElementById('status');
+const LoadingOverlay = document.getElementById('loading-overlay');
+const LoadingText = document.getElementById('loading-text');
+
+function log(msg) {
+  Status.textContent = msg;
+  if (window.ChomBridge) ChomBridge.log(msg);
+}
+
+// ─── Renderer ─────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({
+  antialias: window.devicePixelRatio <= 1,
+  alpha: true,
+  powerPreference: 'default',
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.shadowMap.enabled = false; // disable shadows to save GPU
+document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = null;
+
+const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 20);
+camera.position.set(0, 1.4, 3.5);
+camera.lookAt(0, 1.2, 0);
+
+// ─── Lighting ─────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+const dirLight = new THREE.DirectionalLight(0xffeeff, 1.0);
+dirLight.position.set(1, 3, 2);
+scene.add(dirLight);
+const rimLight = new THREE.DirectionalLight(0x88aaff, 0.3);
+rimLight.position.set(-2, 1, -1);
+scene.add(rimLight);
+
+// ─── VRM / GLB State ──────────────────────────────────────────────
+let vrm = null;
+let mixer = null;
+let currentModel = null;
+let isVRM = false;
+
+// ─── Animation State ──────────────────────────────────────────────
+const clock = new THREE.Clock();
+let breathPhase = 0;
+let blinkTimer = 0;
+let blinkTarget = 0;
+let blinkCurrent = 0;
+let nextBlinkTime = 2.5 + Math.random() * 3;
+const headTarget = new THREE.Vector2(0, 0);
+const headCurrent = new THREE.Vector2(0, 0);
+let currentEmotionMap = {};
+let targetEmotionMap = {};
+const visemeTargets = {};
+const visemeCurrent = {};
+let currentMotion = 'idle';
+let motionTimer = 0;
+let motionActive = false;
+let motionDuration = 2.0;
+
+// ─── Loader Setup ─────────────────────────────────────────────────
+const loader = new THREE.GLTFLoader();
+
+// Register VRM plugin - THREE_VRM is the global from three-vrm.min.js
+if (typeof THREE_VRM !== 'undefined' && THREE_VRM.VRMLoaderPlugin) {
+  try {
+    loader.register(parser => new THREE_VRM.VRMLoaderPlugin(parser, {
+      autoUpdateHumanBones: true,
+    }));
+    log('VRM plugin ready');
+  } catch(e) {
+    log('VRM plugin init failed: ' + e.message);
+  }
+} else {
+  log('THREE_VRM not found - VRM expressions disabled');
+}
+
+// ─── Model Loading ────────────────────────────────────────────────
+function loadModelFromURL(url) {
+  LoadingOverlay.style.opacity = '1';
+  LoadingOverlay.style.pointerEvents = 'all';
+  LoadingText.textContent = 'Loading model…';
+
+  if (currentModel) {
+    scene.remove(currentModel);
+    if (vrm) { try { THREE_VRM.VRMUtils && THREE_VRM.VRMUtils.deepDispose(vrm.scene); } catch(_){} }
+    currentModel = null; vrm = null; mixer = null; isVRM = false;
+  }
+
+  loader.load(
+    url,
+    (gltf) => {
+      if (gltf.userData.vrm) {
+        vrm = gltf.userData.vrm;
+        isVRM = true;
+        // Rotate VRM0 models to face forward
+        if (THREE_VRM.VRMUtils && typeof THREE_VRM.VRMUtils.rotateVRM0 === 'function') {
+          try { THREE_VRM.VRMUtils.rotateVRM0(vrm); } catch(_){}
+        }
+        currentModel = vrm.scene;
+        log('VRM loaded ✓');
+      } else {
+        isVRM = false;
+        currentModel = gltf.scene;
+        log('GLB loaded ✓');
+      }
+
+      // Auto-scale and center
+      const box = new THREE.Box3().setFromObject(currentModel);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      if (maxDim > 0) {
+        const scale = 1.8 / maxDim;
+        currentModel.scale.setScalar(scale);
+        currentModel.position.copy(center.multiplyScalar(-scale));
+        currentModel.position.y = 0;
+      }
+
+      // Animations
+      if (gltf.animations && gltf.animations.length > 0) {
+        mixer = new THREE.AnimationMixer(currentModel);
+        const idleClip = gltf.animations.find(a =>
+          /idle|breath|stand/i.test(a.name)
+        ) || gltf.animations[0];
+        if (idleClip) mixer.clipAction(idleClip).play();
+      }
+
+      scene.add(currentModel);
+      LoadingOverlay.style.opacity = '0';
+      LoadingOverlay.style.pointerEvents = 'none';
+
+      if (window.ChomBridge) ChomBridge.onModelLoaded();
+    },
+    (progress) => {
+      if (progress.total > 0) {
+        LoadingText.textContent = 'Loading… ' + Math.round(progress.loaded/progress.total*100) + '%';
+      }
+    },
+    (err) => {
+      log('Load error: ' + (err && err.message || 'unknown'));
+      LoadingText.textContent = 'Model load failed';
+      if (window.ChomBridge) ChomBridge.log('Load error: ' + err);
+    }
+  );
+}
+
+// ─── Blendshape Helpers ────────────────────────────────────────────
+function setExpressionVRM(name, weight) {
+  if (!vrm) return;
+  try {
+    if (vrm.expressionManager) {
+      vrm.expressionManager.setValue(name, weight);
+    } else if (vrm.blendShapeProxy) {
+      // VRM 0.x API
+      const map = { happy:'Joy', sad:'Sorrow', surprised:'Surprised', angry:'Angry',
+                    blink:'Blink', relaxed:'Relaxed', neutral:'Neutral' };
+      vrm.blendShapeProxy.setValue(map[name] || name, weight);
+    }
+  } catch(_) {}
+}
+
+function setMorphTarget(name, weight) {
+  if (!currentModel) return;
+  currentModel.traverse(child => {
+    if (!child.isMesh || !child.morphTargetDictionary) return;
+    const idx = child.morphTargetDictionary[name] ??
+                child.morphTargetDictionary[name.toLowerCase()] ??
+                child.morphTargetDictionary[name.toUpperCase()] ??
+                child.morphTargetDictionary['Eye_blink_L']; // fallback
+    if (idx !== undefined && child.morphTargetInfluences) {
+      child.morphTargetInfluences[idx] = Math.max(0, Math.min(1, weight));
+    }
+  });
+}
+
+function setExpression(name, weight) {
+  if (isVRM) setExpressionVRM(name, weight);
+  else setMorphTarget(name, weight);
+}
+
+// ─── Emotions ─────────────────────────────────────────────────────
+const EMOTION_MAPS = {
+  happy:     { happy: 1.0 },
+  sad:       { sad: 1.0 },
+  surprised: { surprised: 1.0 },
+  angry:     { angry: 0.7 },
+  excited:   { happy: 0.8, surprised: 0.4 },
+  thinking:  { relaxed: 0.3 },
+  shy:       { happy: 0.4, relaxed: 0.3 },
+  neutral:   {},
+};
+
+function applyEmotion(name) {
+  targetEmotionMap = EMOTION_MAPS[name] || {};
+}
+
+// ─── Motions ──────────────────────────────────────────────────────
+const MOTIONS = {
+  idle:              () => ({}),
+  head_nod:          t => ({ headY: Math.sin(t * Math.PI * 2) * 0.3 }),
+  head_shake:        t => ({ headX: Math.sin(t * Math.PI * 3) * 0.3 }),
+  wave_hand:         t => ({ armR: Math.sin(t * Math.PI * 4) * 0.5 }),
+  thinking_pose:     () => ({ headX: -0.1, headY: 0.1 }),
+  excited_bounce:    t => ({ bodyY: Math.abs(Math.sin(t * Math.PI * 3)) * 0.04 }),
+  expressive_gesture:t => ({ armR: Math.sin(t * Math.PI * 2) * 0.3, armL: Math.cos(t * Math.PI * 2) * 0.2 }),
+};
+
+function triggerMotion(name) {
+  currentMotion = name; motionTimer = 0; motionActive = (name !== 'idle');
+}
+
+// ─── Bone Search ──────────────────────────────────────────────────
+const _boneCache = {};
+function getBone(name) {
+  if (!currentModel) return null;
+  if (_boneCache[name]) {
+    // validate still in scene
+    if (_boneCache[name].parent) return _boneCache[name];
+    delete _boneCache[name];
+  }
+
+  // For VRM, use humanoid bone map
+  if (isVRM && vrm) {
+    const vrmBones = {
+      'head': 'head', 'neck': 'neck', 'chest': 'chest', 'spine': 'spine',
+      'upperarm_r': 'rightUpperArm', 'upperarm_l': 'leftUpperArm',
+      'rightarm': 'rightUpperArm', 'leftarm': 'leftUpperArm',
+    };
+    for (const [key, vrmKey] of Object.entries(vrmBones)) {
+      if (name.toLowerCase().includes(key)) {
+        const bone = vrm.humanoid && vrm.humanoid.getRawBoneNode(vrmKey);
+        if (bone) { _boneCache[name] = bone; return bone; }
+      }
+    }
+  }
+
+  let found = null;
+  const nameLower = name.toLowerCase();
+  currentModel.traverse(obj => {
+    if (found) return;
+    if (obj.isBone || obj.isSkinnedMesh || obj.type === 'Bone') {
+      const n = obj.name.toLowerCase();
+      if (n === nameLower || n.includes(nameLower)) { found = obj; }
+    }
+  });
+  if (found) _boneCache[name] = found;
+  return found;
+}
+
+// ─── Main Loop ────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = Math.min(clock.getDelta(), 0.05); // cap at 50ms
+  const elapsed = clock.getElapsedTime();
+
+  if (!currentModel) { renderer.render(scene, camera); return; }
+
+  if (vrm) vrm.update(delta);
+  if (mixer) mixer.update(delta);
+
+  // Breathing
+  breathPhase += delta * 0.35;
+  const breathAmt = (Math.sin(breathPhase) + 1) * 0.5;
+  const spineBone = getBone('spine') || getBone('chest') || getBone('upper_chest');
+  if (spineBone) {
+    spineBone.rotation.z = Math.sin(breathPhase) * 0.006;
+  }
+  if (isVRM) setExpressionVRM('relaxed', breathAmt * 0.12);
+
+  // Blinking
+  blinkTimer += delta;
+  if (blinkTimer >= nextBlinkTime) {
+    blinkTarget = 1.0;
+    blinkTimer = 0;
+    nextBlinkTime = 2.5 + Math.random() * 4.0;
+    setTimeout(() => { blinkTarget = 0.0; }, 110);
+  }
+  blinkCurrent += (blinkTarget - blinkCurrent) * Math.min(1, delta * 30);
+  if (isVRM) {
+    setExpressionVRM('blink', blinkCurrent);
+  } else {
+    setMorphTarget('eyeBlinkLeft', blinkCurrent);
+    setMorphTarget('eyeBlinkRight', blinkCurrent);
+    setMorphTarget('blink', blinkCurrent);
+  }
+
+  // Head tracking
+  headCurrent.lerp(headTarget, delta * 5);
+  const headBone = getBone('head') || getBone('neck');
+  if (headBone) {
+    headBone.rotation.y += (headCurrent.x * 0.35 - headBone.rotation.y) * delta * 6;
+    headBone.rotation.x += (headCurrent.y * 0.2 - headBone.rotation.x) * delta * 6;
+  }
+
+  // Emotion lerp
+  const allEmo = new Set([...Object.keys(currentEmotionMap), ...Object.keys(targetEmotionMap)]);
+  allEmo.forEach(emo => {
+    const tgt = targetEmotionMap[emo] || 0;
+    currentEmotionMap[emo] = (currentEmotionMap[emo] || 0) + (tgt - (currentEmotionMap[emo] || 0)) * delta * 3;
+    if (Math.abs(currentEmotionMap[emo]) < 0.001) currentEmotionMap[emo] = 0;
+    setExpression(emo, currentEmotionMap[emo]);
+  });
+
+  // Viseme lerp
+  Object.keys(visemeTargets).forEach(vis => {
+    visemeCurrent[vis] = (visemeCurrent[vis] || 0);
+    visemeCurrent[vis] += (visemeTargets[vis] - visemeCurrent[vis]) * delta * 18;
+    setExpression(vis, visemeCurrent[vis]);
+  });
+
+  // Motion
+  if (motionActive) {
+    motionTimer += delta;
+    const t = motionTimer / motionDuration;
+    if (t >= 1.0) { motionActive = false; currentMotion = 'idle'; }
+    else {
+      const fn = MOTIONS[currentMotion];
+      if (fn) {
+        const tr = fn(t) || {};
+        if (tr.headX !== undefined || tr.headY !== undefined) {
+          const hb = getBone('head');
+          if (hb) {
+            if (tr.headX !== undefined) hb.rotation.x += (tr.headX - hb.rotation.x) * delta * 8;
+            if (tr.headY !== undefined) hb.rotation.y += (tr.headY - hb.rotation.y) * delta * 8;
+          }
+        }
+        if (tr.bodyY !== undefined) {
+          currentModel.position.y += (tr.bodyY - currentModel.position.y) * delta * 8;
+        }
+        const ra = getBone('rightUpperArm') || getBone('upperarm_r') || getBone('rightarm');
+        if (ra && tr.armR !== undefined) ra.rotation.z += (tr.armR - ra.rotation.z) * delta * 6;
+        const la = getBone('leftUpperArm') || getBone('upperarm_l') || getBone('leftarm');
+        if (la && tr.armL !== undefined) la.rotation.z += (-tr.armL - la.rotation.z) * delta * 6;
+      }
+    }
+  }
+
+  // Idle sway
+  if (!motionActive) {
+    currentModel.rotation.y = Math.sin(elapsed * 0.25) * 0.015;
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ─── Resize ───────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Touch → Head Tracking ────────────────────────────────────────
+document.addEventListener('touchmove', e => {
+  if (e.touches.length === 0) return;
+  const t = e.touches[0];
+  const nx = (t.clientX / window.innerWidth) * 2 - 1;
+  const ny = -((t.clientY / window.innerHeight) * 2 - 1);
+  headTarget.set(nx * 0.8, ny * 0.3);
+}, { passive: true });
+document.addEventListener('touchend', () => headTarget.set(0, 0), { passive: true });
+
+// ─── Camera Module ────────────────────────────────────────────────
+let cameraStream = null;
+const cameraOverlay = document.getElementById('camera-overlay');
+const cameraVideo = document.getElementById('camera-video');
+const cameraCanvas = document.getElementById('camera-canvas');
+const cameraStatus = document.getElementById('camera-status');
+
+document.getElementById('camera-close').addEventListener('click', closeCamera);
+document.getElementById('camera-analyze').addEventListener('click', analyzeCamera);
+
+function openCamera() {
+  cameraOverlay.classList.add('active');
+  cameraStatus.textContent = 'Starting camera…';
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    .then(stream => {
+      cameraStream = stream;
+      cameraVideo.srcObject = stream;
+      cameraStatus.textContent = 'Camera ready. Press Analyze to ask the AI what it sees.';
+    })
+    .catch(err => {
+      cameraStatus.textContent = 'Camera error: ' + err.message;
+    });
+}
+
+function closeCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  cameraVideo.srcObject = null;
+  cameraOverlay.classList.remove('active');
+}
+
+function analyzeCamera() {
+  if (!cameraStream) { cameraStatus.textContent = 'No camera stream'; return; }
+  cameraStatus.textContent = 'Capturing frame…';
+
+  cameraCanvas.width = cameraVideo.videoWidth || 320;
+  cameraCanvas.height = cameraVideo.videoHeight || 240;
+  const ctx = cameraCanvas.getContext('2d');
+  ctx.save();
+  ctx.scale(-1, 1); // mirror to match video
+  ctx.drawImage(cameraVideo, -cameraCanvas.width, 0, cameraCanvas.width, cameraCanvas.height);
+  ctx.restore();
+
+  // Resize to 640x480 max for efficiency
+  const maxW = 640, maxH = 480;
+  let w = cameraCanvas.width, h = cameraCanvas.height;
+  if (w > maxW) { h = h * maxW / w; w = maxW; }
+  if (h > maxH) { w = w * maxH / h; h = maxH; }
+
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = Math.round(w); outCanvas.height = Math.round(h);
+  outCanvas.getContext('2d').drawImage(cameraCanvas, 0, 0, outCanvas.width, outCanvas.height);
+
+  const base64 = outCanvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+  cameraStatus.textContent = 'Sending to AI…';
+
+  if (window.ChomBridge) {
+    ChomBridge.onCameraFrame(base64);
+    cameraStatus.textContent = 'AI is responding…';
+  } else {
+    cameraStatus.textContent = 'Bridge not ready';
+  }
+}
+
+// ─── Android Bridge (called from Kotlin via evaluateJavascript) ───
+window.CompanionBridge = {
+  loadModel:      url => loadModelFromURL(url),
+  setEmotion:     name => applyEmotion(name),
+  setMotion:      name => triggerMotion(name),
+  setVisemes(weightsJson) {
+    try { Object.assign(visemeTargets, JSON.parse(weightsJson)); } catch(_) {}
+  },
+  triggerBlink() { blinkTarget = 1.0; setTimeout(() => { blinkTarget = 0.0; }, 110); },
+  setHeadTarget:  (x, y) => headTarget.set(parseFloat(x), parseFloat(y)),
+  setBreathPhase: phase => { breathPhase = parseFloat(phase); },
+  openCamera:     () => openCamera(),
+  closeCamera:    () => closeCamera(),
+  setCameraStatus: msg => { cameraStatus.textContent = msg; },
+  getStatus() {
+    return JSON.stringify({
+      modelLoaded: !!currentModel, isVRM,
+      currentEmotion: Object.keys(currentEmotionMap).filter(k => currentEmotionMap[k] > 0.1),
+      currentMotion,
+    });
+  },
+};
+
+// ─── Boot ─────────────────────────────────────────────────────────
+animate();
+LoadingText.textContent = 'Waiting for model…';
+
+setTimeout(() => {
+  if (window.ChomBridge) ChomBridge.onViewerReady();
+}, 300);
+</script>
+</body>
+</html>

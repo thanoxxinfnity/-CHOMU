@@ -1,19 +1,38 @@
 package com.chomu.app
 
-import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
 import android.os.Bundle
-import android.view.WindowManager
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.Color
+import androidx.core.view.WindowCompat
+import com.chomu.app.ui.HomeScreen
+import com.chomu.app.ui.SettingsScreen
+import com.chomu.app.vm.ChatViewModel
 
-class MainActivity : FlutterActivity() {
+class MainActivity : ComponentActivity() {
+    private val vm: ChatViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Keep screen on while companion is active
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    }
-
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        setContent {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    primary = Color(0xFF7B61FF),
+                    background = Color(0xFF0A0A0F),
+                    surface = Color(0xFF131318),
+                )
+            ) {
+                var screen by remember { mutableStateOf("home") }
+                when (screen) {
+                    "home" -> HomeScreen(vm = vm, onSettings = { screen = "settings" })
+                    "settings" -> SettingsScreen(vm = vm, onBack = { screen = "home" })
+                }
+            }
+        }
     }
 }
