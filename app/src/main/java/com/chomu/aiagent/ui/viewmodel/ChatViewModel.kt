@@ -51,8 +51,22 @@ class ChatViewModel @Inject constructor(
                 _uiState.update { it.copy(messages = messages) }
             }
         }
-        // Apply saved voice preference
         voiceManager.setGender(appSettings.getVoiceGender())
+        speakIntro()
+    }
+
+    private fun speakIntro() {
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(1200)
+            val savedGender = appSettings.getVoiceGender()
+            voiceManager.setGender(com.chomu.aiagent.ui.components.VoiceGender.MADHUR_MALE)
+            val intro = "Main ek AI hoon. AI hoon, AI hi rahunga. Na koi nahi hoon — AI hoon, sirf AI."
+            voiceManager.speak(intro)
+            _uiState.update { it.copy(agentState = AgentState.TALKING) }
+            kotlinx.coroutines.delay(4000)
+            voiceManager.setGender(savedGender)
+            _uiState.update { it.copy(agentState = AgentState.IDLE) }
+        }
     }
 
     fun onInputChange(text: String) {
